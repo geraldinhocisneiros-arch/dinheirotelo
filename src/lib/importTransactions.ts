@@ -1,5 +1,6 @@
 import type { Category, EntryType, PaymentMethod, Transaction } from "@/lib/types";
 import { parseCSV } from "@/lib/csv";
+import { parseAmountBR } from "@/lib/money";
 
 const HEADER_ALIASES = {
   date: ["data", "date"],
@@ -40,18 +41,6 @@ function parseDate(raw: string): string | null {
   m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
   return null;
-}
-
-function parseAmount(raw: string): number | null {
-  let s = raw.trim().replace(/r\$/i, "").trim();
-  if (s.includes(",") && s.includes(".")) {
-    s = s.replace(/\./g, "").replace(",", ".");
-  } else if (s.includes(",")) {
-    s = s.replace(",", ".");
-  }
-  s = s.replace(/[^\d.-]/g, "");
-  const n = parseFloat(s);
-  return Number.isFinite(n) ? Math.abs(n) : null;
 }
 
 function parseType(raw: string): EntryType {
@@ -147,7 +136,7 @@ export function importTransactionsFromCsv(
     const rawPayment = idx.paymentMethod !== -1 ? row[idx.paymentMethod] : undefined;
 
     const date = parseDate(rawDate);
-    const amount = parseAmount(rawAmount);
+    const amount = parseAmountBR(rawAmount);
     if (!date || !rawDesc.trim() || amount === null || amount <= 0) {
       errors.push(`Linha ${lineNo}: dados inválidos, pulei.`);
       continue;
