@@ -41,11 +41,11 @@ export function Transactions() {
   const setTransactionSettled = useFinanceStore((s) => s.setTransactionSettled);
   const importTransactions = useFinanceStore((s) => s.importTransactions);
 
-  function handleClearAll() {
-    const ok = window.confirm(
-      `Isso vai apagar TODOS os ${transactions.length} lançamentos (e o status de faturas pagas). Categorias, orçamentos e recorrentes continuam. Não dá pra desfazer. Confirma?`,
-    );
-    if (ok) removeAllTransactions();
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  function handleConfirmClearAll() {
+    removeAllTransactions();
+    setShowClearConfirm(false);
   }
 
   const [showForm, setShowForm] = useState(false);
@@ -192,7 +192,7 @@ export function Transactions() {
             </span>
           </Button>
           {transactions.length > 0 && (
-            <Button variant="danger" onClick={handleClearAll}>
+            <Button variant="danger" onClick={() => setShowClearConfirm(true)}>
               <span className="flex items-center gap-1">
                 <AlertTriangle size={16} /> Limpar tudo
               </span>
@@ -200,6 +200,30 @@ export function Transactions() {
           )}
         </div>
       </div>
+
+      {showClearConfirm && (
+        <Card className="border-[var(--expense)]">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={20} className="text-[var(--expense)] shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h2 className="font-medium mb-1">Apagar todos os lançamentos?</h2>
+              <p className="text-sm text-[var(--text-muted)] mb-3">
+                Isso vai apagar TODOS os {transactions.length} lançamentos e o
+                status de faturas pagas. Categorias, orçamentos e recorrentes
+                continuam como estão. Não dá pra desfazer.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <Button variant="secondary" onClick={() => setShowClearConfirm(false)}>
+                  Cancelar
+                </Button>
+                <Button variant="danger" onClick={handleConfirmClearAll}>
+                  Sim, apagar tudo
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-2">
