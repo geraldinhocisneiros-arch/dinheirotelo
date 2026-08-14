@@ -1,6 +1,7 @@
 import type { Transaction } from "@/lib/types";
 import { parseCSV } from "@/lib/csv";
 import { parseSignedAmountBR } from "@/lib/money";
+import { todayIso } from "@/lib/format";
 
 interface StatementRow {
   date: string;
@@ -97,6 +98,7 @@ export function reconcileBankStatement(
         type,
         categoryId: type === "income" ? incomeCategoryId : expenseCategoryId,
         paymentMethod: "account",
+        settled: row.date <= todayIso(),
       });
     }
   }

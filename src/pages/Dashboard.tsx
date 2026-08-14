@@ -4,7 +4,7 @@ import { Card, ProgressBar } from "@/components/ui";
 import { MonthSelector } from "@/components/MonthSelector";
 import { formatBRL, formatDateBR, todayIso } from "@/lib/format";
 import {
-  accountBalanceAsOf,
+  accountBalanceSettled,
   categorySpendInMonth,
   monthIncomeExpense,
   pendingRecurringInMonth,
@@ -12,7 +12,7 @@ import {
   transactionsInMonth,
 } from "@/lib/selectors";
 import { currentYearMonth, faturaYearMonth, formatYearMonth } from "@/lib/fatura";
-import { TrendingUp, TrendingDown, Wallet, Sparkles } from "lucide-react";
+import { TrendingUp, TrendingDown, Wallet, Sparkles, Check, Circle } from "lucide-react";
 
 export function Dashboard() {
   const transactions = useFinanceStore((s) => s.transactions);
@@ -20,10 +20,11 @@ export function Dashboard() {
   const budgets = useFinanceStore((s) => s.budgets);
   const faturaPayments = useFinanceStore((s) => s.faturaPayments);
   const recurringTemplates = useFinanceStore((s) => s.recurringTemplates);
+  const setTransactionSettled = useFinanceStore((s) => s.setTransactionSettled);
 
   const [ym, setYm] = useState(currentYearMonth());
   const today = todayIso();
-  const currentBalance = accountBalanceAsOf(transactions, today);
+  const currentBalance = accountBalanceSettled(transactions);
   const { income, expense } = monthIncomeExpense(transactions, ym);
   const pendingRecurring = pendingRecurringInMonth(recurringTemplates, transactions, ym);
   const projected = projectedBalance(transactions, recurringTemplates, ym);
@@ -178,7 +179,7 @@ export function Dashboard() {
         ) : (
           <ul className="divide-y divide-[var(--border)] max-h-96 overflow-y-auto">
             {monthTransactions.map((t) => (
-              <li key={t.id} className="py-2 flex justify-between text-sm gap-3">
+              <li key={t.id} className="py-2 flex items-center justify-between text-sm gap-3">
                 <div className="min-w-0">
                   <div className="truncate">{t.description}</div>
                   <div className="text-xs text-[var(--text-muted)]">
@@ -186,15 +187,37 @@ export function Dashboard() {
                     {t.paymentMethod === "credit_card" ? " · cartão" : ""}
                   </div>
                 </div>
-                <div
-                  className={
-                    t.type === "income"
-                      ? "text-[var(--income)] font-medium shrink-0"
-                      : "text-[var(--expense)] font-medium shrink-0"
-                  }
-                >
-                  {t.type === "income" ? "+" : "-"}
-                  {formatBRL(t.amount)}
+                <div className="flex items-center gap-2 shrink-0">
+                  <span
+                    className={
+                      t.type === "income"
+                        ? "text-[var(--income)] font-medium"
+                        : "text-[var(--expense)] font-medium"
+                    }
+                  >
+                    {t.type === "income" ? "+" : "-"}
+                    {formatBRL(t.amount)}
+                  </span>
+                  {t.paymentMethod === "account" && (
+                    <button
+                      onClick={() => setTransactionSettled(t.id, !t.settled)}
+                      className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full border ${
+                        t.settled
+                          ? "border-[var(--income)] text-[var(--income)]"
+                          : "border-[var(--border)] text-[var(--text-muted)]"
+                      }`}
+                      title={
+                        t.settled
+                          ? "Marcar como pendente"
+                          : t.type === "income"
+                            ? "Marcar como recebido"
+                            : "Marcar como pago"
+                      }
+                    >
+                      {t.settled ? <Check size={12} /> : <Circle size={12} />}
+                      {t.settled ? "OK" : "Pendente"}
+                    </button>
+                  )}
                 </div>
               </li>
             ))}

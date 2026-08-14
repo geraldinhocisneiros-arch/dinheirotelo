@@ -2,6 +2,7 @@ import type { Transaction } from "@/lib/types";
 import { parseCSV } from "@/lib/csv";
 import { parseAmountBR } from "@/lib/money";
 import { faturaYearMonth } from "@/lib/fatura";
+import { todayIso } from "@/lib/format";
 
 interface NubankRow {
   date: string;
@@ -104,6 +105,7 @@ export function reconcileNubankCsv(
         type: "expense",
         categoryId: defaultCategoryId,
         paymentMethod: "credit_card",
+        settled: date <= todayIso(),
       });
     }
   }

@@ -7,6 +7,7 @@ import type {
   RecurringTemplate,
   Transaction,
 } from "@/lib/types";
+import { todayIso } from "@/lib/format";
 
 function uid(): string {
   return crypto.randomUUID();
@@ -30,6 +31,8 @@ const defaultBudgets: Budget[] = [
   { categoryId: "cat-gasolina", monthlyLimit: 700 },
 ];
 
+type NewTransaction = Omit<Transaction, "id" | "settled"> & { settled?: boolean };
+
 interface FinanceState {
   categories: Category[];
   transactions: Transaction[];
@@ -37,12 +40,13 @@ interface FinanceState {
   budgets: Budget[];
   faturaPayments: FaturaPayment[];
 
-  addTransaction: (t: Omit<Transaction, "id">) => void;
+  addTransaction: (t: NewTransaction) => void;
   updateTransaction: (id: string, t: Omit<Transaction, "id">) => void;
   removeTransaction: (id: string) => void;
+  setTransactionSettled: (id: string, settled: boolean) => void;
   importTransactions: (
     newCategories: Category[],
-    newTransactions: Omit<Transaction, "id">[],
+    newTransactions: NewTransaction[],
   ) => void;
 
   addCategory: (c: Omit<Category, "id">) => void;
@@ -59,6 +63,10 @@ interface FinanceState {
   setFaturaPaid: (yearMonth: string, paid: boolean, total: number) => void;
 }
 
+function withSettled(t: NewTransaction): Transaction {
+  return { ...t, id: uid(), settled: t.settled ?? t.date <= todayIso() };
+}
+
 export const useFinanceStore = create<FinanceState>()(
   persist(
     (set, get) => ({
@@ -70,7 +78,7 @@ export const useFinanceStore = create<FinanceState>()(
 
       addTransaction: (t) =>
         set((state) => ({
-          transactions: [...state.transactions, { ...t, id: uid() }],
+          transactions: [...state.transactions, withSettled(t)],
         })),
 
       updateTransaction: (id, t) =>
@@ -85,12 +93,19 @@ export const useFinanceStore = create<FinanceState>()(
           transactions: state.transactions.filter((tx) => tx.id !== id),
         })),
 
+      setTransactionSettled: (id, settled) =>
+        set((state) => ({
+          transactions: state.transactions.map((tx) =>
+            tx.id === id ? { ...tx, settled } : tx,
+          ),
+        })),
+
       importTransactions: (newCategories, newTransactions) =>
         set((state) => ({
           categories: [...state.categories, ...newCategories],
           transactions: [
             ...state.transactions,
-            ...newTransactions.map((t) => ({ ...t, id: uid() })),
+            ...newTransactions.map(withSettled),
           ],
         })),
 
@@ -162,9 +177,7 @@ export const useFinanceStore = create<FinanceState>()(
           const exists = state.faturaPayments.some(
             (f) => f.yearMonth === yearMonth,
           );
-          const paidDate = paid
-            ? new Date().toISOString().slice(0, 10)
-            : undefined;
+          const paidDate = paid ? todayIso() : undefined;
           return {
             faturaPayments: exists
               ? state.faturaPayments.map((f) =>
@@ -182,6 +195,7 @@ export const useFinanceStore = create<FinanceState>()(
                     type: "expense",
                     categoryId: "cat-outros-despesa",
                     paymentMethod: "account" as const,
+                    settled: true,
                   },
                 ]
               : state.transactions.filter(
@@ -190,6 +204,19 @@ export const useFinanceStore = create<FinanceState>()(
           };
         }),
     }),
-    { name: "financas-casa-store" },
+    {
+      name: "financas-casa-store",
+      version: 1,
+      migrate: (persistedState, version) => {
+        const state = persistedState as FinanceState;
+        if (version < 1 && Array.isArray(state?.transactions)) {
+          const today = todayIso();
+          state.transactions = state.transactions.map((tx) =>
+            typeof tx.settled === "boolean" ? tx : { ...tx, settled: tx.date <= today },
+          );
+        }
+        return state;
+      },
+    },
   ),
 );

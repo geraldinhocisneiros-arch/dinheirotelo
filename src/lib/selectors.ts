@@ -33,15 +33,12 @@ export function accountBalanceUpTo(
     .reduce((sum, t) => sum + (t.type === "income" ? t.amount : -t.amount), 0);
 }
 
-// Saldo real na data informada (normalmente hoje): soma so o que ja
-// aconteceu ate essa data, ignorando lancamentos futuros mesmo que ja
-// estejam cadastrados com antecedencia dentro do mes.
-export function accountBalanceAsOf(
-  transactions: Transaction[],
-  asOfDateIso: string,
-): number {
+// Saldo real: soma so o que ja foi de fato marcado como pago/recebido
+// (settled), independente da data cadastrada. E o que da baixa de verdade -
+// diferente da projecao, que usa a data planejada.
+export function accountBalanceSettled(transactions: Transaction[]): number {
   return transactions
-    .filter((t) => t.paymentMethod === "account" && t.date <= asOfDateIso)
+    .filter((t) => t.paymentMethod === "account" && t.settled)
     .reduce((sum, t) => sum + (t.type === "income" ? t.amount : -t.amount), 0);
 }
 

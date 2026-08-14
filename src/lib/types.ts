@@ -17,6 +17,9 @@ export interface Transaction {
   categoryId: string;
   paymentMethod: PaymentMethod;
   recurringTemplateId?: string;
+  // Se ja foi efetivamente recebido/pago (baixado). So conta pro saldo atual
+  // quando true - a data e so o planejamento, isso aqui e a realidade.
+  settled: boolean;
 }
 
 export interface RecurringTemplate {

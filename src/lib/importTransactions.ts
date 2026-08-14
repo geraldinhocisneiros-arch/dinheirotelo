@@ -1,6 +1,7 @@
 import type { Category, EntryType, PaymentMethod, Transaction } from "@/lib/types";
 import { parseCSV } from "@/lib/csv";
 import { parseAmountBR } from "@/lib/money";
+import { todayIso } from "@/lib/format";
 
 const HEADER_ALIASES = {
   date: ["data", "date"],
@@ -146,7 +147,15 @@ export function importTransactionsFromCsv(
     const paymentMethod = type === "income" ? "account" : parsePaymentMethod(rawPayment);
     const categoryId = resolveCategory(rawCategory, type);
 
-    transactions.push({ date, description: rawDesc.trim(), amount, type, categoryId, paymentMethod });
+    transactions.push({
+      date,
+      description: rawDesc.trim(),
+      amount,
+      type,
+      categoryId,
+      paymentMethod,
+      settled: date <= todayIso(),
+    });
   }
 
   return { transactions, newCategories, errors };

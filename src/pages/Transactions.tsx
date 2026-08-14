@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useFinanceStore } from "@/store/useFinanceStore";
 import { Button, Card, Input, Label, Select } from "@/components/ui";
+import { MonthSelector } from "@/components/MonthSelector";
 import { formatBRL, formatDateBR, todayIso } from "@/lib/format";
 import { currentYearMonth, faturaYearMonth, formatYearMonth } from "@/lib/fatura";
 import { importTransactionsFromCsv, type ImportResult } from "@/lib/importTransactions";
@@ -12,9 +13,9 @@ import {
   Plus,
   X,
   Upload,
-  ChevronDown,
-  ChevronUp,
   Landmark,
+  Check,
+  Circle,
 } from "lucide-react";
 
 type FormState = Omit<Transaction, "id">;
@@ -26,6 +27,7 @@ const emptyForm = (): FormState => ({
   type: "expense",
   categoryId: "",
   paymentMethod: "account",
+  settled: true,
 });
 
 export function Transactions() {
@@ -34,12 +36,14 @@ export function Transactions() {
   const addTransaction = useFinanceStore((s) => s.addTransaction);
   const updateTransaction = useFinanceStore((s) => s.updateTransaction);
   const removeTransaction = useFinanceStore((s) => s.removeTransaction);
+  const setTransactionSettled = useFinanceStore((s) => s.setTransactionSettled);
   const importTransactions = useFinanceStore((s) => s.importTransactions);
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm());
   const [filterType, setFilterType] = useState<"all" | EntryType>("all");
+  const [ym, setYm] = useState(currentYearMonth());
 
   const [showImport, setShowImport] = useState(false);
   const [csvText, setCsvText] = useState("");
@@ -66,34 +70,11 @@ export function Transactions() {
   const sorted = useMemo(
     () =>
       [...transactions]
+        .filter((t) => t.date.slice(0, 7) === ym)
         .filter((t) => filterType === "all" || t.type === filterType)
         .sort((a, b) => b.date.localeCompare(a.date)),
-    [transactions, filterType],
+    [transactions, filterType, ym],
   );
-
-  const groupedByMonth = useMemo(() => {
-    const map = new Map<string, Transaction[]>();
-    for (const t of sorted) {
-      const ym = t.date.slice(0, 7);
-      const list = map.get(ym) ?? [];
-      list.push(t);
-      map.set(ym, list);
-    }
-    return [...map.entries()];
-  }, [sorted]);
-
-  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(
-    () => new Set([currentYearMonth()]),
-  );
-
-  function toggleMonth(ym: string) {
-    setExpandedMonths((prev) => {
-      const next = new Set(prev);
-      if (next.has(ym)) next.delete(ym);
-      else next.add(ym);
-      return next;
-    });
-  }
 
   function openNew() {
     setForm(emptyForm());
@@ -183,7 +164,7 @@ export function Transactions() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h1 className="text-2xl font-semibold">Lançamentos</h1>
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={openReconcile}>
@@ -204,20 +185,23 @@ export function Transactions() {
         </div>
       </div>
 
-      <div className="flex gap-2">
-        {(["all", "income", "expense"] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilterType(f)}
-            className={`px-3 py-1.5 rounded-full text-sm border ${
-              filterType === f
-                ? "bg-[var(--accent)] text-[var(--accent-fg)] border-[var(--accent)]"
-                : "border-[var(--border)] text-[var(--text-muted)]"
-            }`}
-          >
-            {f === "all" ? "Todos" : f === "income" ? "Entradas" : "Saídas"}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-2">
+          {(["all", "income", "expense"] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilterType(f)}
+              className={`px-3 py-1.5 rounded-full text-sm border ${
+                filterType === f
+                  ? "bg-[var(--accent)] text-[var(--accent-fg)] border-[var(--accent)]"
+                  : "border-[var(--border)] text-[var(--text-muted)]"
+              }`}
+            >
+              {f === "all" ? "Todos" : f === "income" ? "Entradas" : "Saídas"}
+            </button>
+          ))}
+        </div>
+        <MonthSelector value={ym} onChange={setYm} />
       </div>
 
       {showReconcile && (
@@ -530,6 +514,20 @@ export function Transactions() {
                 Vai para a fatura de {formatYearMonth(faturaYearMonth(form.date))}.
               </p>
             )}
+            {form.paymentMethod === "account" && (
+              <label className="sm:col-span-2 flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.settled}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, settled: e.target.checked }))
+                  }
+                />
+                {form.type === "income"
+                  ? "Já recebi esse valor"
+                  : "Já paguei esse valor"}
+              </label>
+            )}
             <div className="sm:col-span-2 flex gap-2 justify-end">
               <Button variant="secondary" onClick={() => setShowForm(false)}>
                 Cancelar
@@ -540,96 +538,65 @@ export function Transactions() {
         </Card>
       )}
 
-      {sorted.length === 0 ? (
-        <Card>
+      <Card>
+        {sorted.length === 0 ? (
           <p className="text-sm text-[var(--text-muted)]">
-            Nenhum lançamento encontrado.
+            Nenhum lançamento em {formatYearMonth(ym)}.
           </p>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {groupedByMonth.map(([ym, items]) => {
-            const monthIncome = items
-              .filter((t) => t.type === "income")
-              .reduce((s, t) => s + t.amount, 0);
-            const monthExpense = items
-              .filter((t) => t.type === "expense")
-              .reduce((s, t) => s + t.amount, 0);
-            const isOpen = expandedMonths.has(ym);
-
-            return (
-              <Card key={ym}>
-                <button
-                  className="w-full flex items-center justify-between gap-3"
-                  onClick={() => toggleMonth(ym)}
-                >
-                  <div className="flex items-center gap-2">
-                    {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                    <span className="font-medium capitalize">
-                      {formatYearMonth(ym)}
-                    </span>
-                    <span className="text-xs text-[var(--text-muted)]">
-                      ({items.length})
-                    </span>
+        ) : (
+          <ul className="divide-y divide-[var(--border)]">
+            {sorted.map((t) => (
+              <li key={t.id} className="py-2.5 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate">{t.description}</div>
+                  <div className="text-xs text-[var(--text-muted)]">
+                    {formatDateBR(t.date)} · {categoryById[t.categoryId]?.name}
+                    {t.paymentMethod === "credit_card" ? " · cartão" : " · conta"}
                   </div>
-                  <div className="flex items-center gap-3 text-sm">
-                    {monthIncome > 0 && (
-                      <span className="text-[var(--income)]">
-                        +{formatBRL(monthIncome)}
-                      </span>
-                    )}
-                    {monthExpense > 0 && (
-                      <span className="text-[var(--expense)]">
-                        -{formatBRL(monthExpense)}
-                      </span>
-                    )}
-                  </div>
-                </button>
-
-                {isOpen && (
-                  <ul className="divide-y divide-[var(--border)] mt-3 pt-3 border-t border-[var(--border)]">
-                    {items.map((t) => (
-                      <li
-                        key={t.id}
-                        className="py-2.5 flex items-center justify-between gap-3"
-                      >
-                        <div className="min-w-0">
-                          <div className="truncate">{t.description}</div>
-                          <div className="text-xs text-[var(--text-muted)]">
-                            {formatDateBR(t.date)} · {categoryById[t.categoryId]?.name}
-                            {t.paymentMethod === "credit_card" ? " · cartão" : " · conta"}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3 shrink-0">
-                          <span
-                            className={
-                              t.type === "income"
-                                ? "text-[var(--income)] font-medium"
-                                : "text-[var(--expense)] font-medium"
-                            }
-                          >
-                            {t.type === "income" ? "+" : "-"}
-                            {formatBRL(t.amount)}
-                          </span>
-                          <button onClick={() => openEdit(t)} aria-label="Editar">
-                            <Pencil size={15} className="text-[var(--text-muted)]" />
-                          </button>
-                          <button
-                            onClick={() => removeTransaction(t.id)}
-                            aria-label="Excluir"
-                          >
-                            <Trash2 size={15} className="text-[var(--expense)]" />
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Card>
-            );
-          })}
-        </div>
-      )}
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  {t.paymentMethod === "account" && (
+                    <button
+                      onClick={() => setTransactionSettled(t.id, !t.settled)}
+                      className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full border ${
+                        t.settled
+                          ? "border-[var(--income)] text-[var(--income)]"
+                          : "border-[var(--border)] text-[var(--text-muted)]"
+                      }`}
+                      title={
+                        t.settled
+                          ? "Marcar como pendente"
+                          : t.type === "income"
+                            ? "Marcar como recebido"
+                            : "Marcar como pago"
+                      }
+                    >
+                      {t.settled ? <Check size={12} /> : <Circle size={12} />}
+                      {t.settled ? "OK" : "Pendente"}
+                    </button>
+                  )}
+                  <span
+                    className={
+                      t.type === "income"
+                        ? "text-[var(--income)] font-medium"
+                        : "text-[var(--expense)] font-medium"
+                    }
+                  >
+                    {t.type === "income" ? "+" : "-"}
+                    {formatBRL(t.amount)}
+                  </span>
+                  <button onClick={() => openEdit(t)} aria-label="Editar">
+                    <Pencil size={15} className="text-[var(--text-muted)]" />
+                  </button>
+                  <button onClick={() => removeTransaction(t.id)} aria-label="Excluir">
+                    <Trash2 size={15} className="text-[var(--expense)]" />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   );
 }
