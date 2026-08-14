@@ -56,6 +56,10 @@ interface FinanceState {
   addRecurringTemplate: (r: Omit<RecurringTemplate, "id">) => void;
   updateRecurringTemplate: (id: string, r: Omit<RecurringTemplate, "id">) => void;
   removeRecurringTemplate: (id: string) => void;
+  importRecurringTemplates: (
+    newCategories: Category[],
+    newTemplates: Omit<RecurringTemplate, "id">[],
+  ) => void;
   launchRecurring: (id: string, date: string) => void;
 
   setBudget: (categoryId: string, monthlyLimit: number) => void;
@@ -143,6 +147,15 @@ export const useFinanceStore = create<FinanceState>()(
           recurringTemplates: state.recurringTemplates.filter(
             (rt) => rt.id !== id,
           ),
+        })),
+
+      importRecurringTemplates: (newCategories, newTemplates) =>
+        set((state) => ({
+          categories: [...state.categories, ...newCategories],
+          recurringTemplates: [
+            ...state.recurringTemplates,
+            ...newTemplates.map((t) => ({ ...t, id: uid() })),
+          ],
         })),
 
       launchRecurring: (id, date) => {

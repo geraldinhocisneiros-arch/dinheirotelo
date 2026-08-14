@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useFinanceStore } from "@/store/useFinanceStore";
 import { Button, Card, Input, Label, Select } from "@/components/ui";
 import { formatBRL, todayIso } from "@/lib/format";
+import {
+  importRecurringFromCsv,
+  type RecurringImportResult,
+} from "@/lib/importRecurring";
 import type { EntryType, PaymentMethod, RecurringTemplate } from "@/lib/types";
-import { Plus, Trash2, Pencil, X, PlayCircle } from "lucide-react";
+import { Plus, Trash2, Pencil, X, PlayCircle, Upload } from "lucide-react";
 
 type FormState = Omit<RecurringTemplate, "id">;
 
@@ -28,11 +32,17 @@ export function Recurring() {
     (s) => s.removeRecurringTemplate,
   );
   const launchRecurring = useFinanceStore((s) => s.launchRecurring);
+  const importRecurringTemplates = useFinanceStore((s) => s.importRecurringTemplates);
   const transactions = useFinanceStore((s) => s.transactions);
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm());
+
+  const [showImport, setShowImport] = useState(false);
+  const [csvText, setCsvText] = useState("");
+  const [preview, setPreview] = useState<RecurringImportResult | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const categoryById = Object.fromEntries(categories.map((c) => [c.id, c]));
   const categoriesForType = categories.filter((c) => c.type === form.type);
@@ -76,20 +86,157 @@ export function Recurring() {
     launchRecurring(templateId, date);
   }
 
+  function openImport() {
+    setCsvText("");
+    setPreview(null);
+    setShowImport(true);
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    setCsvText(text);
+    setPreview(importRecurringFromCsv(text, categories));
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function handleAnalyze() {
+    if (!csvText.trim()) return;
+    setPreview(importRecurringFromCsv(csvText, categories));
+  }
+
+  function handleConfirmImport() {
+    if (!preview || preview.templates.length === 0) return;
+    importRecurringTemplates(preview.newCategories, preview.templates);
+    setShowImport(false);
+    setCsvText("");
+    setPreview(null);
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h1 className="text-2xl font-semibold">Recorrentes</h1>
-        <Button onClick={openNew}>
-          <span className="flex items-center gap-1">
-            <Plus size={16} /> Novo recorrente
-          </span>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={openImport}>
+            <span className="flex items-center gap-1">
+              <Upload size={16} /> Importar CSV
+            </span>
+          </Button>
+          <Button onClick={openNew}>
+            <span className="flex items-center gap-1">
+              <Plus size={16} /> Novo recorrente
+            </span>
+          </Button>
+        </div>
       </div>
       <p className="text-sm text-[var(--text-muted)]">
         Cadastre entradas e saídas fixas (salário, aluguel, assinaturas) e
         lance-as no mês com um clique.
       </p>
+
+      {showImport && (
+        <Card>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-medium">Importar recorrentes de um CSV</h2>
+            <button onClick={() => setShowImport(false)} aria-label="Fechar">
+              <X size={18} />
+            </button>
+          </div>
+          <p className="text-sm text-[var(--text-muted)] mb-3">
+            Colunas esperadas: descrição, valor, dia_do_mes e, opcionalmente,
+            tipo (entrada/saída), categoria e forma de pagamento.
+          </p>
+          <div className="flex flex-col gap-3">
+            <div>
+              <Label>Arquivo CSV</Label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleFileChange}
+                className="text-sm"
+              />
+            </div>
+            <div>
+              <Label>Ou cole o conteúdo do CSV aqui</Label>
+              <textarea
+                value={csvText}
+                onChange={(e) => setCsvText(e.target.value)}
+                rows={6}
+                placeholder="descricao,valor,tipo,categoria,forma_pagamento,dia_do_mes"
+                className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button variant="secondary" onClick={handleAnalyze}>
+                Analisar
+              </Button>
+            </div>
+
+            {preview && (
+              <div className="border-t border-[var(--border)] pt-3">
+                <p className="text-sm mb-2">
+                  <span className="font-medium text-[var(--income)]">
+                    {preview.templates.length} recorrente
+                    {preview.templates.length !== 1 ? "s" : ""}
+                  </span>{" "}
+                  pronto{preview.templates.length !== 1 ? "s" : ""} para
+                  importar
+                  {preview.newCategories.length > 0 && (
+                    <>
+                      {" "}
+                      · {preview.newCategories.length} categoria
+                      {preview.newCategories.length !== 1 ? "s" : ""} nova
+                      {preview.newCategories.length !== 1 ? "s" : ""}
+                    </>
+                  )}
+                </p>
+                {preview.errors.length > 0 && (
+                  <ul className="text-xs text-[var(--expense)] mb-2 space-y-0.5">
+                    {preview.errors.slice(0, 5).map((err, i) => (
+                      <li key={i}>{err}</li>
+                    ))}
+                  </ul>
+                )}
+                {preview.templates.length > 0 && (
+                  <ul className="text-sm divide-y divide-[var(--border)] max-h-64 overflow-y-auto mb-3">
+                    {preview.templates.map((t, i) => (
+                      <li key={i} className="py-1.5 flex justify-between gap-3">
+                        <span className="truncate">
+                          Dia {t.dayOfMonth} · {t.description}
+                        </span>
+                        <span
+                          className={
+                            t.type === "income"
+                              ? "text-[var(--income)] shrink-0"
+                              : "text-[var(--expense)] shrink-0"
+                          }
+                        >
+                          {t.type === "income" ? "+" : "-"}
+                          {formatBRL(t.amount)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="flex justify-end gap-2">
+                  <Button variant="secondary" onClick={() => setShowImport(false)}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={handleConfirmImport}
+                    disabled={preview.templates.length === 0}
+                  >
+                    Confirmar importação
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
 
       {showForm && (
         <Card>
