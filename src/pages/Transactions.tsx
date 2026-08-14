@@ -4,8 +4,18 @@ import { Button, Card, Input, Label, Select } from "@/components/ui";
 import { formatBRL, formatDateBR, todayIso } from "@/lib/format";
 import { currentYearMonth, faturaYearMonth, formatYearMonth } from "@/lib/fatura";
 import { importTransactionsFromCsv, type ImportResult } from "@/lib/importTransactions";
+import { reconcileBankStatement, type BankReconcileResult } from "@/lib/bankReconcile";
 import type { EntryType, PaymentMethod, Transaction } from "@/lib/types";
-import { Trash2, Pencil, Plus, X, Upload, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  Trash2,
+  Pencil,
+  Plus,
+  X,
+  Upload,
+  ChevronDown,
+  ChevronUp,
+  Landmark,
+} from "lucide-react";
 
 type FormState = Omit<Transaction, "id">;
 
@@ -35,6 +45,20 @@ export function Transactions() {
   const [csvText, setCsvText] = useState("");
   const [preview, setPreview] = useState<ImportResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [showReconcile, setShowReconcile] = useState(false);
+  const [statementText, setStatementText] = useState("");
+  const [statementPreview, setStatementPreview] = useState<BankReconcileResult | null>(null);
+  const statementFileInputRef = useRef<HTMLInputElement>(null);
+
+  const incomeCategoryId =
+    categories.find((c) => c.id === "cat-outros-receita")?.id ??
+    categories.find((c) => c.type === "income")?.id ??
+    "";
+  const expenseCategoryId =
+    categories.find((c) => c.id === "cat-outros-despesa")?.id ??
+    categories.find((c) => c.type === "expense")?.id ??
+    "";
 
   const categoryById = Object.fromEntries(categories.map((c) => [c.id, c]));
   const categoriesForType = categories.filter((c) => c.type === form.type);
@@ -123,11 +147,50 @@ export function Transactions() {
     setPreview(null);
   }
 
+  function openReconcile() {
+    setStatementText("");
+    setStatementPreview(null);
+    setShowReconcile(true);
+  }
+
+  function analyzeStatement(text: string) {
+    setStatementPreview(
+      reconcileBankStatement(text, transactions, incomeCategoryId, expenseCategoryId),
+    );
+  }
+
+  async function handleStatementFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    setStatementText(text);
+    analyzeStatement(text);
+    if (statementFileInputRef.current) statementFileInputRef.current.value = "";
+  }
+
+  function handleAnalyzeStatement() {
+    if (!statementText.trim()) return;
+    analyzeStatement(statementText);
+  }
+
+  function handleConfirmReconcile() {
+    if (!statementPreview || statementPreview.toImport.length === 0) return;
+    importTransactions([], statementPreview.toImport);
+    setShowReconcile(false);
+    setStatementText("");
+    setStatementPreview(null);
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Lançamentos</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={openReconcile}>
+            <span className="flex items-center gap-1">
+              <Landmark size={16} /> Conciliar extrato bancário
+            </span>
+          </Button>
           <Button variant="secondary" onClick={openImport}>
             <span className="flex items-center gap-1">
               <Upload size={16} /> Importar CSV
@@ -156,6 +219,107 @@ export function Transactions() {
           </button>
         ))}
       </div>
+
+      {showReconcile && (
+        <Card>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-medium">Conciliar extrato bancário</h2>
+            <button onClick={() => setShowReconcile(false)} aria-label="Fechar">
+              <X size={18} />
+            </button>
+          </div>
+          <p className="text-sm text-[var(--text-muted)] mb-3">
+            Cole ou envie o extrato (colunas date, title, amount — valor
+            negativo para saída, positivo para entrada). Lançamentos que já
+            existem no mesmo mês e valor são ignorados automaticamente; o
+            resto é adicionado como novo lançamento de conta.
+          </p>
+          <div className="flex flex-col gap-3">
+            <div>
+              <Label>Arquivo do extrato</Label>
+              <input
+                ref={statementFileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleStatementFileChange}
+                className="text-sm"
+              />
+            </div>
+            <div>
+              <Label>Ou cole o conteúdo aqui</Label>
+              <textarea
+                value={statementText}
+                onChange={(e) => setStatementText(e.target.value)}
+                rows={6}
+                placeholder="date,title,amount"
+                className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button variant="secondary" onClick={handleAnalyzeStatement}>
+                Analisar
+              </Button>
+            </div>
+
+            {statementPreview && (
+              <div className="border-t border-[var(--border)] pt-3">
+                <p className="text-sm mb-2">
+                  <span className="text-[var(--text-muted)]">
+                    {statementPreview.alreadyCount} já lançado
+                    {statementPreview.alreadyCount !== 1 ? "s" : ""} (ignorado
+                    {statementPreview.alreadyCount !== 1 ? "s" : ""})
+                  </span>
+                  {" · "}
+                  <span className="font-medium text-[var(--income)]">
+                    {statementPreview.toImport.length} novo
+                    {statementPreview.toImport.length !== 1 ? "s" : ""}
+                  </span>{" "}
+                  para importar
+                </p>
+                {statementPreview.toImport.length > 0 ? (
+                  <ul className="text-sm divide-y divide-[var(--border)] max-h-64 overflow-y-auto mb-3">
+                    {statementPreview.rows
+                      .filter((r) => !r.alreadyExists)
+                      .map((r, i) => (
+                        <li key={i} className="py-1.5 flex justify-between gap-3">
+                          <span className="truncate">
+                            {formatDateBR(r.date)} · {r.description}
+                          </span>
+                          <span
+                            className={
+                              r.type === "income"
+                                ? "text-[var(--income)] shrink-0"
+                                : "text-[var(--expense)] shrink-0"
+                            }
+                          >
+                            {r.type === "income" ? "+" : "-"}
+                            {formatBRL(r.amount)}
+                          </span>
+                        </li>
+                      ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-[var(--text-muted)] mb-3">
+                    Nada novo — o extrato já bate com o que está lançado.
+                  </p>
+                )}
+                <div className="flex justify-end gap-2">
+                  <Button variant="secondary" onClick={() => setShowReconcile(false)}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={handleConfirmReconcile}
+                    disabled={statementPreview.toImport.length === 0}
+                  >
+                    Importar {statementPreview.toImport.length} lançamento
+                    {statementPreview.toImport.length !== 1 ? "s" : ""}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
 
       {showImport && (
         <Card>

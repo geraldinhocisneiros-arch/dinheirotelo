@@ -2,25 +2,31 @@ import { useState } from "react";
 import { useFinanceStore } from "@/store/useFinanceStore";
 import { Card, ProgressBar } from "@/components/ui";
 import { MonthSelector } from "@/components/MonthSelector";
-import { formatBRL, formatDateBR } from "@/lib/format";
+import { formatBRL, formatDateBR, todayIso } from "@/lib/format";
 import {
-  accountBalanceUpTo,
+  accountBalanceAsOf,
   categorySpendInMonth,
   monthIncomeExpense,
+  pendingRecurringInMonth,
+  projectedBalance,
   transactionsInMonth,
 } from "@/lib/selectors";
 import { currentYearMonth, faturaYearMonth, formatYearMonth } from "@/lib/fatura";
-import { TrendingUp, TrendingDown, Wallet } from "lucide-react";
+import { TrendingUp, TrendingDown, Wallet, Sparkles } from "lucide-react";
 
 export function Dashboard() {
   const transactions = useFinanceStore((s) => s.transactions);
   const categories = useFinanceStore((s) => s.categories);
   const budgets = useFinanceStore((s) => s.budgets);
   const faturaPayments = useFinanceStore((s) => s.faturaPayments);
+  const recurringTemplates = useFinanceStore((s) => s.recurringTemplates);
 
   const [ym, setYm] = useState(currentYearMonth());
-  const balance = accountBalanceUpTo(transactions, ym);
+  const today = todayIso();
+  const currentBalance = accountBalanceAsOf(transactions, today);
   const { income, expense } = monthIncomeExpense(transactions, ym);
+  const pendingRecurring = pendingRecurringInMonth(recurringTemplates, transactions, ym);
+  const projected = projectedBalance(transactions, recurringTemplates, ym);
 
   const cardPurchases = transactions.filter(
     (t) => t.paymentMethod === "credit_card" && faturaYearMonth(t.date) === ym,
@@ -41,12 +47,30 @@ export function Dashboard() {
         <MonthSelector value={ym} onChange={setYm} />
       </div>
 
+      <div
+        className="rounded-xl p-4"
+        style={{ background: "var(--accent)", color: "var(--accent-fg)" }}
+      >
+        <div className="flex items-center gap-2 text-sm mb-1" style={{ opacity: 0.85 }}>
+          <Wallet size={16} /> Saldo atual (hoje, {formatDateBR(today)})
+        </div>
+        <div className="text-3xl font-semibold">{formatBRL(currentBalance)}</div>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <div className="flex items-center gap-2 text-[var(--text-muted)] text-sm mb-1">
-            <Wallet size={16} /> Saldo até o fim do mês
+            <Sparkles size={16} className="text-[var(--accent)]" /> Projeção fim do mês
           </div>
-          <div className="text-2xl font-semibold">{formatBRL(balance)}</div>
+          <div
+            className={
+              projected >= 0
+                ? "text-2xl font-semibold text-[var(--income)]"
+                : "text-2xl font-semibold text-[var(--expense)]"
+            }
+          >
+            {formatBRL(projected)}
+          </div>
         </Card>
         <Card>
           <div className="flex items-center gap-2 text-[var(--text-muted)] text-sm mb-1">
@@ -65,6 +89,30 @@ export function Dashboard() {
           </div>
         </Card>
       </div>
+
+      {pendingRecurring.length > 0 && (
+        <Card>
+          <p className="text-xs text-[var(--text-muted)] mb-2">
+            A projeção acima já soma {pendingRecurring.length} recorrente
+            {pendingRecurring.length !== 1 ? "s" : ""} de {formatYearMonth(ym)} que
+            ainda {pendingRecurring.length !== 1 ? "não entraram" : "não entrou"}{" "}
+            — atualiza sozinha conforme você lança ou edita coisas:
+          </p>
+          <ul className="text-xs text-[var(--text-muted)] flex flex-wrap gap-x-3 gap-y-1">
+            {pendingRecurring.map((t) => (
+              <li key={t.id}>
+                {t.description}{" "}
+                <span
+                  className={t.type === "income" ? "text-[var(--income)]" : "text-[var(--expense)]"}
+                >
+                  ({t.type === "income" ? "+" : "-"}
+                  {formatBRL(t.amount)})
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <Card>
         <div className="flex items-center justify-between mb-1">
