@@ -40,6 +40,10 @@ interface FinanceState {
   addTransaction: (t: Omit<Transaction, "id">) => void;
   updateTransaction: (id: string, t: Omit<Transaction, "id">) => void;
   removeTransaction: (id: string) => void;
+  importTransactions: (
+    newCategories: Category[],
+    newTransactions: Omit<Transaction, "id">[],
+  ) => void;
 
   addCategory: (c: Omit<Category, "id">) => void;
   removeCategory: (id: string) => void;
@@ -79,6 +83,15 @@ export const useFinanceStore = create<FinanceState>()(
       removeTransaction: (id) =>
         set((state) => ({
           transactions: state.transactions.filter((tx) => tx.id !== id),
+        })),
+
+      importTransactions: (newCategories, newTransactions) =>
+        set((state) => ({
+          categories: [...state.categories, ...newCategories],
+          transactions: [
+            ...state.transactions,
+            ...newTransactions.map((t) => ({ ...t, id: uid() })),
+          ],
         })),
 
       addCategory: (c) =>

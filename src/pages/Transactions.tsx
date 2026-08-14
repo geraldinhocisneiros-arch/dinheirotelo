@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useFinanceStore } from "@/store/useFinanceStore";
 import { Button, Card, Input, Label, Select } from "@/components/ui";
 import { formatBRL, formatDateBR, todayIso } from "@/lib/format";
 import { faturaYearMonth, formatYearMonth } from "@/lib/fatura";
+import { importTransactionsFromCsv, type ImportResult } from "@/lib/importTransactions";
 import type { EntryType, PaymentMethod, Transaction } from "@/lib/types";
-import { Trash2, Pencil, Plus, X } from "lucide-react";
+import { Trash2, Pencil, Plus, X, Upload } from "lucide-react";
 
 type FormState = Omit<Transaction, "id">;
 
@@ -23,11 +24,17 @@ export function Transactions() {
   const addTransaction = useFinanceStore((s) => s.addTransaction);
   const updateTransaction = useFinanceStore((s) => s.updateTransaction);
   const removeTransaction = useFinanceStore((s) => s.removeTransaction);
+  const importTransactions = useFinanceStore((s) => s.importTransactions);
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm());
   const [filterType, setFilterType] = useState<"all" | EntryType>("all");
+
+  const [showImport, setShowImport] = useState(false);
+  const [csvText, setCsvText] = useState("");
+  const [preview, setPreview] = useState<ImportResult | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const categoryById = Object.fromEntries(categories.map((c) => [c.id, c]));
   const categoriesForType = categories.filter((c) => c.type === form.type);
@@ -64,15 +71,50 @@ export function Transactions() {
     setShowForm(false);
   }
 
+  function openImport() {
+    setCsvText("");
+    setPreview(null);
+    setShowImport(true);
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    setCsvText(text);
+    setPreview(importTransactionsFromCsv(text, categories));
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function handleAnalyze() {
+    if (!csvText.trim()) return;
+    setPreview(importTransactionsFromCsv(csvText, categories));
+  }
+
+  function handleConfirmImport() {
+    if (!preview || preview.transactions.length === 0) return;
+    importTransactions(preview.newCategories, preview.transactions);
+    setShowImport(false);
+    setCsvText("");
+    setPreview(null);
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Lançamentos</h1>
-        <Button onClick={openNew}>
-          <span className="flex items-center gap-1">
-            <Plus size={16} /> Novo lançamento
-          </span>
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={openImport}>
+            <span className="flex items-center gap-1">
+              <Upload size={16} /> Importar CSV
+            </span>
+          </Button>
+          <Button onClick={openNew}>
+            <span className="flex items-center gap-1">
+              <Plus size={16} /> Novo lançamento
+            </span>
+          </Button>
+        </div>
       </div>
 
       <div className="flex gap-2">
@@ -90,6 +132,117 @@ export function Transactions() {
           </button>
         ))}
       </div>
+
+      {showImport && (
+        <Card>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-medium">Importar lançamentos de um CSV</h2>
+            <button onClick={() => setShowImport(false)} aria-label="Fechar">
+              <X size={18} />
+            </button>
+          </div>
+          <p className="text-sm text-[var(--text-muted)] mb-3">
+            Colunas esperadas: data, descrição, valor e, opcionalmente, tipo
+            (entrada/saída), categoria e forma de pagamento (conta/cartão).
+          </p>
+          <div className="flex flex-col gap-3">
+            <div>
+              <Label>Arquivo CSV</Label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleFileChange}
+                className="text-sm"
+              />
+            </div>
+            <div>
+              <Label>Ou cole o conteúdo do CSV aqui</Label>
+              <textarea
+                value={csvText}
+                onChange={(e) => setCsvText(e.target.value)}
+                rows={6}
+                placeholder="data,descricao,valor,tipo,categoria,forma_pagamento"
+                className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button variant="secondary" onClick={handleAnalyze}>
+                Analisar
+              </Button>
+            </div>
+
+            {preview && (
+              <div className="border-t border-[var(--border)] pt-3">
+                <p className="text-sm mb-2">
+                  <span className="font-medium text-[var(--income)]">
+                    {preview.transactions.length} lançamento
+                    {preview.transactions.length !== 1 ? "s" : ""}
+                  </span>{" "}
+                  pronto{preview.transactions.length !== 1 ? "s" : ""} para
+                  importar
+                  {preview.newCategories.length > 0 && (
+                    <>
+                      {" "}
+                      · {preview.newCategories.length} categoria
+                      {preview.newCategories.length !== 1 ? "s" : ""} nova
+                      {preview.newCategories.length !== 1 ? "s" : ""} será
+                      {preview.newCategories.length !== 1 ? "ão" : ""} criada
+                      {preview.newCategories.length !== 1 ? "s" : ""}
+                    </>
+                  )}
+                </p>
+                {preview.errors.length > 0 && (
+                  <ul className="text-xs text-[var(--expense)] mb-2 space-y-0.5">
+                    {preview.errors.slice(0, 5).map((err, i) => (
+                      <li key={i}>{err}</li>
+                    ))}
+                    {preview.errors.length > 5 && (
+                      <li>e mais {preview.errors.length - 5} erro(s)...</li>
+                    )}
+                  </ul>
+                )}
+                {preview.transactions.length > 0 && (
+                  <ul className="text-sm divide-y divide-[var(--border)] max-h-48 overflow-y-auto mb-3">
+                    {preview.transactions.slice(0, 8).map((t, i) => (
+                      <li key={i} className="py-1.5 flex justify-between">
+                        <span className="truncate">
+                          {formatDateBR(t.date)} · {t.description}
+                        </span>
+                        <span
+                          className={
+                            t.type === "income"
+                              ? "text-[var(--income)]"
+                              : "text-[var(--expense)]"
+                          }
+                        >
+                          {formatBRL(t.amount)}
+                        </span>
+                      </li>
+                    ))}
+                    {preview.transactions.length > 8 && (
+                      <li className="py-1.5 text-[var(--text-muted)]">
+                        e mais {preview.transactions.length - 8}...
+                      </li>
+                    )}
+                  </ul>
+                )}
+                <div className="flex justify-end gap-2">
+                  <Button variant="secondary" onClick={() => setShowImport(false)}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={handleConfirmImport}
+                    disabled={preview.transactions.length === 0}
+                  >
+                    Confirmar importação
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
 
       {showForm && (
         <Card>
