@@ -43,6 +43,7 @@ interface FinanceState {
   addTransaction: (t: NewTransaction) => void;
   updateTransaction: (id: string, t: Omit<Transaction, "id">) => void;
   removeTransaction: (id: string) => void;
+  removeAllTransactions: () => void;
   setTransactionSettled: (id: string, settled: boolean) => void;
   importTransactions: (
     newCategories: Category[],
@@ -92,6 +93,9 @@ export const useFinanceStore = create<FinanceState>()(
         set((state) => ({
           transactions: state.transactions.filter((tx) => tx.id !== id),
         })),
+
+      removeAllTransactions: () =>
+        set(() => ({ transactions: [], faturaPayments: [] })),
 
       setTransactionSettled: (id, settled) =>
         set((state) => ({

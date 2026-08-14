@@ -1,7 +1,42 @@
-import type { Transaction } from "@/lib/types";
+import type { Category, EntryType, Transaction } from "@/lib/types";
 import { parseCSV } from "@/lib/csv";
 import { parseSignedAmountBR } from "@/lib/money";
 import { todayIso } from "@/lib/format";
+
+function normalize(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+// Categoria por nome (nao por id), pra funcionar mesmo com categorias
+// criadas pelo usuario ou apos um reset. Regras conservadoras: so bate
+// quando o texto tem bastante certeza, o resto cai no "Outras".
+const KEYWORD_RULES: { categoryName: string; keywords: string[] }[] = [
+  { categoryName: "Moradia", keywords: ["condomin", "iptu", "splendid", "internet", "claro", "celpe", "energia"] },
+  { categoryName: "Saúde", keywords: ["farma", "drog", "plano de saude", "seguros", "icatu", "clinic", "medic", "hospital", "psiquiatra", "pediatra", "dentist"] },
+  { categoryName: "Gasolina", keywords: ["posto", "gasolina", "combustivel"] },
+  { categoryName: "Transporte", keywords: ["uber", "99app", "estacion", "pedagio", "ipva"] },
+  { categoryName: "Assinaturas", keywords: ["netflix", "spotify", "amazon prime", "hbo", "disney"] },
+  { categoryName: "Salário", keywords: ["sispag", "salari"] },
+];
+
+function guessCategoryId(
+  title: string,
+  type: EntryType,
+  categories: Category[],
+): string | null {
+  const normalizedTitle = normalize(title);
+  for (const rule of KEYWORD_RULES) {
+    if (!rule.keywords.some((kw) => normalizedTitle.includes(normalize(kw)))) continue;
+    const match = categories.find(
+      (c) => c.type === type && normalize(c.name) === normalize(rule.categoryName),
+    );
+    if (match) return match.id;
+  }
+  return null;
+}
 
 interface StatementRow {
   date: string;
@@ -54,6 +89,7 @@ export interface BankReconcileResult {
 export function reconcileBankStatement(
   csvText: string,
   existingTransactions: Transaction[],
+  categories: Category[],
   incomeCategoryId: string,
   expenseCategoryId: string,
 ): BankReconcileResult {
@@ -91,12 +127,13 @@ export function reconcileBankStatement(
     rows.push({ date: row.date, description: row.title, amount, type, alreadyExists });
 
     if (!alreadyExists) {
+      const guessed = guessCategoryId(row.title, type, categories);
       toImport.push({
         date: row.date,
         description: row.title,
         amount,
         type,
-        categoryId: type === "income" ? incomeCategoryId : expenseCategoryId,
+        categoryId: guessed ?? (type === "income" ? incomeCategoryId : expenseCategoryId),
         paymentMethod: "account",
         settled: row.date <= todayIso(),
       });

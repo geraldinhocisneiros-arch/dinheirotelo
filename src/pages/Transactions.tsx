@@ -16,6 +16,7 @@ import {
   Landmark,
   Check,
   Circle,
+  AlertTriangle,
 } from "lucide-react";
 
 type FormState = Omit<Transaction, "id">;
@@ -36,8 +37,16 @@ export function Transactions() {
   const addTransaction = useFinanceStore((s) => s.addTransaction);
   const updateTransaction = useFinanceStore((s) => s.updateTransaction);
   const removeTransaction = useFinanceStore((s) => s.removeTransaction);
+  const removeAllTransactions = useFinanceStore((s) => s.removeAllTransactions);
   const setTransactionSettled = useFinanceStore((s) => s.setTransactionSettled);
   const importTransactions = useFinanceStore((s) => s.importTransactions);
+
+  function handleClearAll() {
+    const ok = window.confirm(
+      `Isso vai apagar TODOS os ${transactions.length} lançamentos (e o status de faturas pagas). Categorias, orçamentos e recorrentes continuam. Não dá pra desfazer. Confirma?`,
+    );
+    if (ok) removeAllTransactions();
+  }
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -136,7 +145,7 @@ export function Transactions() {
 
   function analyzeStatement(text: string) {
     setStatementPreview(
-      reconcileBankStatement(text, transactions, incomeCategoryId, expenseCategoryId),
+      reconcileBankStatement(text, transactions, categories, incomeCategoryId, expenseCategoryId),
     );
   }
 
@@ -182,6 +191,13 @@ export function Transactions() {
               <Plus size={16} /> Novo lançamento
             </span>
           </Button>
+          {transactions.length > 0 && (
+            <Button variant="danger" onClick={handleClearAll}>
+              <span className="flex items-center gap-1">
+                <AlertTriangle size={16} /> Limpar tudo
+              </span>
+            </Button>
+          )}
         </div>
       </div>
 
