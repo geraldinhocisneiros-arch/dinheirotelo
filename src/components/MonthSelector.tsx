@@ -1,11 +1,8 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { formatYearMonth } from "@/lib/fatura";
+import { shiftMonth } from "@/lib/date";
 
-export function shiftMonth(yearMonth: string, delta: number): string {
-  const [y, m] = yearMonth.split("-").map(Number);
-  const date = new Date(y, m - 1 + delta, 1);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
+export { shiftMonth };
 
 export function MonthSelector({
   value,

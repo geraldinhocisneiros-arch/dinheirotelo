@@ -8,6 +8,8 @@ import type {
   Transaction,
 } from "@/lib/types";
 import { todayIso } from "@/lib/format";
+import { shiftMonth, daysInMonth } from "@/lib/date";
+import { currentYearMonth } from "@/lib/fatura";
 
 function uid(): string {
   return crypto.randomUUID();
@@ -61,6 +63,7 @@ interface FinanceState {
     newTemplates: Omit<RecurringTemplate, "id">[],
   ) => void;
   launchRecurring: (id: string, date: string) => void;
+  autoLaunchRecurring: () => void;
 
   setBudget: (categoryId: string, monthlyLimit: number) => void;
   removeBudget: (categoryId: string) => void;
@@ -127,20 +130,24 @@ export const useFinanceStore = create<FinanceState>()(
           categories: state.categories.filter((c) => c.id !== id),
         })),
 
-      addRecurringTemplate: (r) =>
+      addRecurringTemplate: (r) => {
         set((state) => ({
           recurringTemplates: [
             ...state.recurringTemplates,
             { ...r, id: uid() },
           ],
-        })),
+        }));
+        get().autoLaunchRecurring();
+      },
 
-      updateRecurringTemplate: (id, r) =>
+      updateRecurringTemplate: (id, r) => {
         set((state) => ({
           recurringTemplates: state.recurringTemplates.map((rt) =>
             rt.id === id ? { ...r, id } : rt,
           ),
-        })),
+        }));
+        get().autoLaunchRecurring();
+      },
 
       removeRecurringTemplate: (id) =>
         set((state) => ({
@@ -149,14 +156,16 @@ export const useFinanceStore = create<FinanceState>()(
           ),
         })),
 
-      importRecurringTemplates: (newCategories, newTemplates) =>
+      importRecurringTemplates: (newCategories, newTemplates) => {
         set((state) => ({
           categories: [...state.categories, ...newCategories],
           recurringTemplates: [
             ...state.recurringTemplates,
             ...newTemplates.map((t) => ({ ...t, id: uid() })),
           ],
-        })),
+        }));
+        get().autoLaunchRecurring();
+      },
 
       launchRecurring: (id, date) => {
         const template = get().recurringTemplates.find((rt) => rt.id === id);
@@ -170,6 +179,52 @@ export const useFinanceStore = create<FinanceState>()(
           paymentMethod: template.paymentMethod,
           recurringTemplateId: template.id,
         });
+      },
+
+      // Gera automaticamente os lancamentos dos recorrentes ativos para os
+      // proximos 12 meses (a partir do mes que vem), sem precisar clicar em
+      // "lancar no mes". E idempotente: nunca duplica um mes ja gerado pra
+      // aquele recorrente, e roda de novo a cada vez que o app abre ou um
+      // recorrente muda, mantendo a janela sempre ~12 meses a frente.
+      autoLaunchRecurring: () => {
+        const state = get();
+        const startMonth = shiftMonth(currentYearMonth(), 1);
+        const monthsAhead = 12;
+        const today = todayIso();
+        const newTransactions: Transaction[] = [];
+
+        for (let i = 0; i < monthsAhead; i++) {
+          const ym = shiftMonth(startMonth, i);
+          for (const template of state.recurringTemplates) {
+            if (!template.active) continue;
+            const exists =
+              state.transactions.some(
+                (tx) => tx.recurringTemplateId === template.id && tx.date.slice(0, 7) === ym,
+              ) ||
+              newTransactions.some(
+                (tx) => tx.recurringTemplateId === template.id && tx.date.slice(0, 7) === ym,
+              );
+            if (exists) continue;
+
+            const day = Math.min(template.dayOfMonth, daysInMonth(ym));
+            const date = `${ym}-${String(day).padStart(2, "0")}`;
+            newTransactions.push({
+              id: uid(),
+              date,
+              description: template.description,
+              amount: template.amount,
+              type: template.type,
+              categoryId: template.categoryId,
+              paymentMethod: template.paymentMethod,
+              recurringTemplateId: template.id,
+              settled: date <= today,
+            });
+          }
+        }
+
+        if (newTransactions.length > 0) {
+          set((s) => ({ transactions: [...s.transactions, ...newTransactions] }));
+        }
       },
 
       setBudget: (categoryId, monthlyLimit) =>
