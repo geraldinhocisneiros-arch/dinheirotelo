@@ -1,7 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useFinanceStore } from "@/store/useFinanceStore";
 import { Card } from "@/components/ui";
+import { MonthSelector } from "@/components/MonthSelector";
 import { formatBRL } from "@/lib/format";
+import { currentYearMonth, formatYearMonth } from "@/lib/fatura";
 
 function brlFormatter(value: unknown) {
   return formatBRL(Number(Array.isArray(value) ? value[0] : value));
@@ -26,13 +28,13 @@ export function Reports() {
   const categories = useFinanceStore((s) => s.categories);
   const categoryById = Object.fromEntries(categories.map((c) => [c.id, c]));
 
-  const currentMonth = new Date().toISOString().slice(0, 7);
+  const [categoryMonth, setCategoryMonth] = useState(currentYearMonth());
 
   const spendByCategory = useMemo(() => {
     const totals = new Map<string, number>();
     for (const t of transactions) {
       if (t.type !== "expense") continue;
-      if (t.date.slice(0, 7) !== currentMonth) continue;
+      if (t.date.slice(0, 7) !== categoryMonth) continue;
       totals.set(t.categoryId, (totals.get(t.categoryId) ?? 0) + t.amount);
     }
     return [...totals.entries()]
@@ -42,7 +44,7 @@ export function Reports() {
         color: categoryById[categoryId]?.color ?? "#999",
       }))
       .sort((a, b) => b.value - a.value);
-  }, [transactions, currentMonth, categoryById]);
+  }, [transactions, categoryMonth, categoryById]);
 
   const monthlyTrend = useMemo(() => {
     const totals = new Map<string, { income: number; expense: number }>();
@@ -56,18 +58,24 @@ export function Reports() {
     }
     return [...totals.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-6)
       .map(([month, v]) => ({ month, ...v }));
   }, [transactions]);
+
+  const trendChartWidth = Math.max(560, monthlyTrend.length * 70);
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Relatórios</h1>
 
       <Card>
-        <h2 className="font-medium mb-3">Gastos por categoria (mês atual)</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <h2 className="font-medium">Gastos por categoria</h2>
+          <MonthSelector value={categoryMonth} onChange={setCategoryMonth} />
+        </div>
         {spendByCategory.length === 0 ? (
-          <p className="text-sm text-[var(--text-muted)]">Sem dados ainda.</p>
+          <p className="text-sm text-[var(--text-muted)]">
+            Sem gastos em {formatYearMonth(categoryMonth)}.
+          </p>
         ) : (
           <div className="grid sm:grid-cols-2 gap-4 items-center">
             <ResponsiveContainer width="100%" height={240}>
@@ -108,20 +116,24 @@ export function Reports() {
       </Card>
 
       <Card>
-        <h2 className="font-medium mb-3">Entradas x Saídas (últimos meses)</h2>
+        <h2 className="font-medium mb-3">Entradas x Saídas por mês</h2>
         {monthlyTrend.length === 0 ? (
           <p className="text-sm text-[var(--text-muted)]">Sem dados ainda.</p>
         ) : (
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={monthlyTrend}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="month" stroke="var(--text-muted)" fontSize={12} />
-              <YAxis stroke="var(--text-muted)" fontSize={12} />
-              <Tooltip formatter={brlFormatter} />
-              <Bar dataKey="income" name="Entradas" fill="var(--income)" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="expense" name="Saídas" fill="var(--expense)" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="overflow-x-auto">
+            <div style={{ minWidth: trendChartWidth }}>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={monthlyTrend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="month" stroke="var(--text-muted)" fontSize={12} />
+                  <YAxis stroke="var(--text-muted)" fontSize={12} />
+                  <Tooltip formatter={brlFormatter} />
+                  <Bar dataKey="income" name="Entradas" fill="var(--income)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="expense" name="Saídas" fill="var(--expense)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         )}
       </Card>
 
@@ -130,26 +142,30 @@ export function Reports() {
         {monthlyTrend.length === 0 ? (
           <p className="text-sm text-[var(--text-muted)]">Sem dados ainda.</p>
         ) : (
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart
-              data={monthlyTrend.map((m) => ({
-                month: m.month,
-                saldo: m.income - m.expense,
-              }))}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="month" stroke="var(--text-muted)" fontSize={12} />
-              <YAxis stroke="var(--text-muted)" fontSize={12} />
-              <Tooltip formatter={brlFormatter} />
-              <Line
-                type="monotone"
-                dataKey="saldo"
-                stroke="var(--accent)"
-                strokeWidth={2}
-                dot
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          <div className="overflow-x-auto">
+            <div style={{ minWidth: trendChartWidth }}>
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart
+                  data={monthlyTrend.map((m) => ({
+                    month: m.month,
+                    saldo: m.income - m.expense,
+                  }))}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="month" stroke="var(--text-muted)" fontSize={12} />
+                  <YAxis stroke="var(--text-muted)" fontSize={12} />
+                  <Tooltip formatter={brlFormatter} />
+                  <Line
+                    type="monotone"
+                    dataKey="saldo"
+                    stroke="var(--accent)"
+                    strokeWidth={2}
+                    dot
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         )}
       </Card>
     </div>

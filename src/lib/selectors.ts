@@ -20,6 +20,17 @@ export function accountBalance(transactions: Transaction[]): number {
     .reduce((sum, t) => sum + (t.type === "income" ? t.amount : -t.amount), 0);
 }
 
+// Saldo acumulado ate o fim do mes informado (inclusive), para navegacao
+// mensal: mostra o saldo "como estava" naquele mes, nao o saldo de hoje.
+export function accountBalanceUpTo(
+  transactions: Transaction[],
+  yearMonth: string,
+): number {
+  return transactions
+    .filter((t) => t.paymentMethod === "account" && monthOf(t.date) <= yearMonth)
+    .reduce((sum, t) => sum + (t.type === "income" ? t.amount : -t.amount), 0);
+}
+
 export function monthIncomeExpense(
   transactions: Transaction[],
   yearMonth: string,

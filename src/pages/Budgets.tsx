@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useFinanceStore } from "@/store/useFinanceStore";
 import { Button, Card, Input, Label, ProgressBar, Select } from "@/components/ui";
+import { MonthSelector } from "@/components/MonthSelector";
 import { formatBRL } from "@/lib/format";
 import { categorySpendInMonth } from "@/lib/selectors";
 import { currentYearMonth } from "@/lib/fatura";
@@ -17,7 +18,7 @@ export function Budgets() {
   const [categoryId, setCategoryId] = useState("");
   const [limit, setLimit] = useState("");
 
-  const ym = currentYearMonth();
+  const [ym, setYm] = useState(currentYearMonth());
   const categoryById = Object.fromEntries(categories.map((c) => [c.id, c]));
   const expenseCategories = categories.filter((c) => c.type === "expense");
   const availableCategories = expenseCategories.filter(
@@ -42,13 +43,16 @@ export function Budgets() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Orçamentos</h1>
-        <Button onClick={() => setShowForm(true)}>
-          <span className="flex items-center gap-1">
-            <Plus size={16} /> Novo orçamento
-          </span>
-        </Button>
+        <div className="flex items-center gap-3">
+          <MonthSelector value={ym} onChange={setYm} />
+          <Button onClick={() => setShowForm(true)}>
+            <span className="flex items-center gap-1">
+              <Plus size={16} /> Novo orçamento
+            </span>
+          </Button>
+        </div>
       </div>
       <p className="text-sm text-[var(--text-muted)]">
         Defina um limite mensal por categoria. O que você não gastar não é

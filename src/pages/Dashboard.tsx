@@ -1,10 +1,13 @@
+import { useState } from "react";
 import { useFinanceStore } from "@/store/useFinanceStore";
 import { Card, ProgressBar } from "@/components/ui";
+import { MonthSelector } from "@/components/MonthSelector";
 import { formatBRL, formatDateBR } from "@/lib/format";
 import {
-  accountBalance,
+  accountBalanceUpTo,
   categorySpendInMonth,
   monthIncomeExpense,
+  transactionsInMonth,
 } from "@/lib/selectors";
 import { currentYearMonth, faturaYearMonth, formatYearMonth } from "@/lib/fatura";
 import { TrendingUp, TrendingDown, Wallet } from "lucide-react";
@@ -15,8 +18,8 @@ export function Dashboard() {
   const budgets = useFinanceStore((s) => s.budgets);
   const faturaPayments = useFinanceStore((s) => s.faturaPayments);
 
-  const ym = currentYearMonth();
-  const balance = accountBalance(transactions);
+  const [ym, setYm] = useState(currentYearMonth());
+  const balance = accountBalanceUpTo(transactions, ym);
   const { income, expense } = monthIncomeExpense(transactions, ym);
 
   const cardPurchases = transactions.filter(
@@ -25,20 +28,23 @@ export function Dashboard() {
   const cardTotal = cardPurchases.reduce((s, t) => s + t.amount, 0);
   const faturaPaid = faturaPayments.find((f) => f.yearMonth === ym)?.paid ?? false;
 
-  const recent = [...transactions]
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 6);
+  const monthTransactions = [...transactionsInMonth(transactions, ym)].sort((a, b) =>
+    b.date.localeCompare(a.date),
+  );
 
   const categoryById = Object.fromEntries(categories.map((c) => [c.id, c]));
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Painel</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Painel</h1>
+        <MonthSelector value={ym} onChange={setYm} />
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <div className="flex items-center gap-2 text-[var(--text-muted)] text-sm mb-1">
-            <Wallet size={16} /> Saldo em conta
+            <Wallet size={16} /> Saldo até o fim do mês
           </div>
           <div className="text-2xl font-semibold">{formatBRL(balance)}</div>
         </Card>
@@ -114,17 +120,19 @@ export function Dashboard() {
       )}
 
       <Card>
-        <h2 className="font-medium mb-3">Últimos lançamentos</h2>
-        {recent.length === 0 ? (
+        <h2 className="font-medium mb-3">
+          Lançamentos de {formatYearMonth(ym)}
+        </h2>
+        {monthTransactions.length === 0 ? (
           <p className="text-sm text-[var(--text-muted)]">
-            Nenhum lançamento ainda.
+            Nenhum lançamento neste mês.
           </p>
         ) : (
-          <ul className="divide-y divide-[var(--border)]">
-            {recent.map((t) => (
-              <li key={t.id} className="py-2 flex justify-between text-sm">
-                <div>
-                  <div>{t.description}</div>
+          <ul className="divide-y divide-[var(--border)] max-h-96 overflow-y-auto">
+            {monthTransactions.map((t) => (
+              <li key={t.id} className="py-2 flex justify-between text-sm gap-3">
+                <div className="min-w-0">
+                  <div className="truncate">{t.description}</div>
                   <div className="text-xs text-[var(--text-muted)]">
                     {formatDateBR(t.date)} · {categoryById[t.categoryId]?.name}
                     {t.paymentMethod === "credit_card" ? " · cartão" : ""}
@@ -133,8 +141,8 @@ export function Dashboard() {
                 <div
                   className={
                     t.type === "income"
-                      ? "text-[var(--income)] font-medium"
-                      : "text-[var(--expense)] font-medium"
+                      ? "text-[var(--income)] font-medium shrink-0"
+                      : "text-[var(--expense)] font-medium shrink-0"
                   }
                 >
                   {t.type === "income" ? "+" : "-"}

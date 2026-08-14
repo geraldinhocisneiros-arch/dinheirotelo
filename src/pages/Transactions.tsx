@@ -2,10 +2,10 @@ import { useMemo, useRef, useState } from "react";
 import { useFinanceStore } from "@/store/useFinanceStore";
 import { Button, Card, Input, Label, Select } from "@/components/ui";
 import { formatBRL, formatDateBR, todayIso } from "@/lib/format";
-import { faturaYearMonth, formatYearMonth } from "@/lib/fatura";
+import { currentYearMonth, faturaYearMonth, formatYearMonth } from "@/lib/fatura";
 import { importTransactionsFromCsv, type ImportResult } from "@/lib/importTransactions";
 import type { EntryType, PaymentMethod, Transaction } from "@/lib/types";
-import { Trash2, Pencil, Plus, X, Upload } from "lucide-react";
+import { Trash2, Pencil, Plus, X, Upload, ChevronDown, ChevronUp } from "lucide-react";
 
 type FormState = Omit<Transaction, "id">;
 
@@ -46,6 +46,30 @@ export function Transactions() {
         .sort((a, b) => b.date.localeCompare(a.date)),
     [transactions, filterType],
   );
+
+  const groupedByMonth = useMemo(() => {
+    const map = new Map<string, Transaction[]>();
+    for (const t of sorted) {
+      const ym = t.date.slice(0, 7);
+      const list = map.get(ym) ?? [];
+      list.push(t);
+      map.set(ym, list);
+    }
+    return [...map.entries()];
+  }, [sorted]);
+
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(
+    () => new Set([currentYearMonth()]),
+  );
+
+  function toggleMonth(ym: string) {
+    setExpandedMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(ym)) next.delete(ym);
+      else next.add(ym);
+      return next;
+    });
+  }
 
   function openNew() {
     setForm(emptyForm());
@@ -352,45 +376,96 @@ export function Transactions() {
         </Card>
       )}
 
-      <Card>
-        {sorted.length === 0 ? (
+      {sorted.length === 0 ? (
+        <Card>
           <p className="text-sm text-[var(--text-muted)]">
             Nenhum lançamento encontrado.
           </p>
-        ) : (
-          <ul className="divide-y divide-[var(--border)]">
-            {sorted.map((t) => (
-              <li key={t.id} className="py-2.5 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate">{t.description}</div>
-                  <div className="text-xs text-[var(--text-muted)]">
-                    {formatDateBR(t.date)} · {categoryById[t.categoryId]?.name}
-                    {t.paymentMethod === "credit_card" ? " · cartão" : " · conta"}
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {groupedByMonth.map(([ym, items]) => {
+            const monthIncome = items
+              .filter((t) => t.type === "income")
+              .reduce((s, t) => s + t.amount, 0);
+            const monthExpense = items
+              .filter((t) => t.type === "expense")
+              .reduce((s, t) => s + t.amount, 0);
+            const isOpen = expandedMonths.has(ym);
+
+            return (
+              <Card key={ym}>
+                <button
+                  className="w-full flex items-center justify-between gap-3"
+                  onClick={() => toggleMonth(ym)}
+                >
+                  <div className="flex items-center gap-2">
+                    {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    <span className="font-medium capitalize">
+                      {formatYearMonth(ym)}
+                    </span>
+                    <span className="text-xs text-[var(--text-muted)]">
+                      ({items.length})
+                    </span>
                   </div>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <span
-                    className={
-                      t.type === "income"
-                        ? "text-[var(--income)] font-medium"
-                        : "text-[var(--expense)] font-medium"
-                    }
-                  >
-                    {t.type === "income" ? "+" : "-"}
-                    {formatBRL(t.amount)}
-                  </span>
-                  <button onClick={() => openEdit(t)} aria-label="Editar">
-                    <Pencil size={15} className="text-[var(--text-muted)]" />
-                  </button>
-                  <button onClick={() => removeTransaction(t.id)} aria-label="Excluir">
-                    <Trash2 size={15} className="text-[var(--expense)]" />
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+                  <div className="flex items-center gap-3 text-sm">
+                    {monthIncome > 0 && (
+                      <span className="text-[var(--income)]">
+                        +{formatBRL(monthIncome)}
+                      </span>
+                    )}
+                    {monthExpense > 0 && (
+                      <span className="text-[var(--expense)]">
+                        -{formatBRL(monthExpense)}
+                      </span>
+                    )}
+                  </div>
+                </button>
+
+                {isOpen && (
+                  <ul className="divide-y divide-[var(--border)] mt-3 pt-3 border-t border-[var(--border)]">
+                    {items.map((t) => (
+                      <li
+                        key={t.id}
+                        className="py-2.5 flex items-center justify-between gap-3"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate">{t.description}</div>
+                          <div className="text-xs text-[var(--text-muted)]">
+                            {formatDateBR(t.date)} · {categoryById[t.categoryId]?.name}
+                            {t.paymentMethod === "credit_card" ? " · cartão" : " · conta"}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span
+                            className={
+                              t.type === "income"
+                                ? "text-[var(--income)] font-medium"
+                                : "text-[var(--expense)] font-medium"
+                            }
+                          >
+                            {t.type === "income" ? "+" : "-"}
+                            {formatBRL(t.amount)}
+                          </span>
+                          <button onClick={() => openEdit(t)} aria-label="Editar">
+                            <Pencil size={15} className="text-[var(--text-muted)]" />
+                          </button>
+                          <button
+                            onClick={() => removeTransaction(t.id)}
+                            aria-label="Excluir"
+                          >
+                            <Trash2 size={15} className="text-[var(--expense)]" />
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
