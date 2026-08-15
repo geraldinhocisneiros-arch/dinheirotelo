@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useFinanceStore } from "@/store/useFinanceStore";
 import { Button, Card, Input, Label, Select } from "@/components/ui";
 import { formatBRL, todayIso } from "@/lib/format";
@@ -6,8 +6,9 @@ import {
   importRecurringFromCsv,
   type RecurringImportResult,
 } from "@/lib/importRecurring";
+import { findDuplicateRecurringTemplates } from "@/lib/selectors";
 import type { EntryType, PaymentMethod, RecurringTemplate } from "@/lib/types";
-import { Plus, Trash2, Pencil, X, PlayCircle, Upload } from "lucide-react";
+import { Plus, Trash2, Pencil, X, PlayCircle, Upload, AlertTriangle } from "lucide-react";
 
 type FormState = Omit<RecurringTemplate, "id">;
 
@@ -33,7 +34,22 @@ export function Recurring() {
   );
   const launchRecurring = useFinanceStore((s) => s.launchRecurring);
   const importRecurringTemplates = useFinanceStore((s) => s.importRecurringTemplates);
+  const removeDuplicateRecurring = useFinanceStore((s) => s.removeDuplicateRecurring);
   const transactions = useFinanceStore((s) => s.transactions);
+
+  const duplicateGroups = useMemo(
+    () => findDuplicateRecurringTemplates(templates),
+    [templates],
+  );
+  const [dedupeResult, setDedupeResult] = useState<{
+    removedTemplates: number;
+    removedTransactions: number;
+  } | null>(null);
+
+  function handleRemoveDuplicates() {
+    const result = removeDuplicateRecurring();
+    setDedupeResult(result);
+  }
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -135,6 +151,50 @@ export function Recurring() {
         Cadastre entradas e saídas fixas (salário, aluguel, assinaturas) e
         lance-as no mês com um clique.
       </p>
+
+      {duplicateGroups.length > 0 && (
+        <Card>
+          <div className="flex items-start gap-3">
+            <AlertTriangle
+              size={20}
+              className="text-[var(--expense)] shrink-0 mt-0.5"
+            />
+            <div className="flex-1">
+              <h2 className="font-medium mb-1">
+                {duplicateGroups.length} recorrente
+                {duplicateGroups.length !== 1 ? "s" : ""} duplicado
+                {duplicateGroups.length !== 1 ? "s" : ""}
+              </h2>
+              <p className="text-sm text-[var(--text-muted)] mb-2">
+                Cada um está cadastrado mais de uma vez, então os lançamentos
+                futuros dele (e as entradas/saídas projetadas) estão contados
+                em dobro:
+              </p>
+              <ul className="text-sm text-[var(--text-muted)] mb-3 space-y-0.5">
+                {duplicateGroups.map((group) => (
+                  <li key={group[0].id}>
+                    {group[0].description} ({formatBRL(group[0].amount)}) ·{" "}
+                    {group.length}x
+                  </li>
+                ))}
+              </ul>
+              <Button variant="danger" onClick={handleRemoveDuplicates}>
+                Remover duplicados automaticamente
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {dedupeResult && (
+        <Card>
+          <p className="text-sm text-[var(--income)]">
+            {dedupeResult.removedTemplates > 0
+              ? `Removi ${dedupeResult.removedTemplates} recorrente${dedupeResult.removedTemplates !== 1 ? "s" : ""} duplicado${dedupeResult.removedTemplates !== 1 ? "s" : ""} e ${dedupeResult.removedTransactions} lançamento${dedupeResult.removedTransactions !== 1 ? "s" : ""} gerado${dedupeResult.removedTransactions !== 1 ? "s" : ""} por eles.`
+              : "Nenhum duplicado encontrado."}
+          </p>
+        </Card>
+      )}
 
       {showImport && (
         <Card>

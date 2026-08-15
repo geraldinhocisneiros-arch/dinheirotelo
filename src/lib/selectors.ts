@@ -200,3 +200,30 @@ export function pendingFaturaUpTo(
   }
   return sum;
 }
+
+function recurringDedupeKey(t: RecurringTemplate): string {
+  return [
+    t.description.trim().toLowerCase(),
+    t.amount.toFixed(2),
+    t.dayOfMonth,
+    t.type,
+    t.paymentMethod,
+  ].join("|");
+}
+
+// Recorrentes cadastrados mais de uma vez (mesma descricao, valor, dia,
+// tipo e forma de pagamento) - cada copia gera seu proprio lote de
+// lancamentos futuros, entao um recorrente duplicado dobra entradas/saidas
+// projetadas todo mes. Cada grupo retornado tem 2+ itens.
+export function findDuplicateRecurringTemplates(
+  templates: RecurringTemplate[],
+): RecurringTemplate[][] {
+  const groups = new Map<string, RecurringTemplate[]>();
+  for (const t of templates) {
+    const key = recurringDedupeKey(t);
+    const list = groups.get(key) ?? [];
+    list.push(t);
+    groups.set(key, list);
+  }
+  return [...groups.values()].filter((g) => g.length > 1);
+}

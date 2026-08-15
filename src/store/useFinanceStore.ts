@@ -10,6 +10,7 @@ import type {
 import { todayIso } from "@/lib/format";
 import { shiftMonth, daysInMonth } from "@/lib/date";
 import { currentYearMonth } from "@/lib/fatura";
+import { findDuplicateRecurringTemplates } from "@/lib/selectors";
 
 function uid(): string {
   return crypto.randomUUID();
@@ -64,6 +65,7 @@ interface FinanceState {
   ) => void;
   launchRecurring: (id: string, date: string) => void;
   autoLaunchRecurring: () => void;
+  removeDuplicateRecurring: () => { removedTemplates: number; removedTransactions: number };
 
   setBudget: (categoryId: string, monthlyLimit: number) => void;
   removeBudget: (categoryId: string) => void;
@@ -225,6 +227,30 @@ export const useFinanceStore = create<FinanceState>()(
         if (newTransactions.length > 0) {
           set((s) => ({ transactions: [...s.transactions, ...newTransactions] }));
         }
+      },
+
+      removeDuplicateRecurring: () => {
+        const state = get();
+        const groups = findDuplicateRecurringTemplates(state.recurringTemplates);
+        const idsToRemove = new Set<string>();
+        for (const group of groups) {
+          for (const dup of group.slice(1)) idsToRemove.add(dup.id);
+        }
+        if (idsToRemove.size === 0) {
+          return { removedTemplates: 0, removedTransactions: 0 };
+        }
+        const removedTransactions = state.transactions.filter(
+          (tx) => tx.recurringTemplateId && idsToRemove.has(tx.recurringTemplateId),
+        ).length;
+        set((s) => ({
+          recurringTemplates: s.recurringTemplates.filter(
+            (rt) => !idsToRemove.has(rt.id),
+          ),
+          transactions: s.transactions.filter(
+            (tx) => !tx.recurringTemplateId || !idsToRemove.has(tx.recurringTemplateId),
+          ),
+        }));
+        return { removedTemplates: idsToRemove.size, removedTransactions };
       },
 
       setBudget: (categoryId, monthlyLimit) =>
