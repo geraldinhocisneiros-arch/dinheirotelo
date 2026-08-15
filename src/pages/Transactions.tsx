@@ -1,9 +1,11 @@
 import { useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useFinanceStore } from "@/store/useFinanceStore";
 import { Button, Card, Input, Label, Select } from "@/components/ui";
 import { MonthSelector } from "@/components/MonthSelector";
 import { formatBRL, formatDateBR, todayIso } from "@/lib/format";
 import { currentYearMonth, faturaYearMonth, formatYearMonth } from "@/lib/fatura";
+import { creditCardTransactionsByFatura } from "@/lib/selectors";
 import { importTransactionsFromCsv, type ImportResult } from "@/lib/importTransactions";
 import { reconcileBankStatement, type BankReconcileResult } from "@/lib/bankReconcile";
 import { exportBackup, parseBackup, applyBackup } from "@/lib/backup";
@@ -21,6 +23,7 @@ import {
   Download,
   Copy,
   FileUp,
+  CreditCard,
 } from "lucide-react";
 
 type FormState = Omit<Transaction, "id">;
@@ -38,6 +41,7 @@ const emptyForm = (): FormState => ({
 export function Transactions() {
   const transactions = useFinanceStore((s) => s.transactions);
   const categories = useFinanceStore((s) => s.categories);
+  const faturaPayments = useFinanceStore((s) => s.faturaPayments);
   const addTransaction = useFinanceStore((s) => s.addTransaction);
   const updateTransaction = useFinanceStore((s) => s.updateTransaction);
   const removeTransaction = useFinanceStore((s) => s.removeTransaction);
@@ -127,14 +131,27 @@ export function Transactions() {
   const categoryById = Object.fromEntries(categories.map((c) => [c.id, c]));
   const categoriesForType = categories.filter((c) => c.type === form.type);
 
+  // Compras no cartao nao aparecem uma a uma aqui - viram uma unica linha de
+  // fatura (ver faturaTotal abaixo). O detalhamento fica so na pagina
+  // "Fatura do Cartão".
   const sorted = useMemo(
     () =>
       [...transactions]
         .filter((t) => t.date.slice(0, 7) === ym)
+        .filter((t) => t.paymentMethod !== "credit_card")
         .filter((t) => filterType === "all" || t.type === filterType)
         .sort((a, b) => b.date.localeCompare(a.date)),
     [transactions, filterType, ym],
   );
+
+  const faturaItems = useMemo(
+    () => creditCardTransactionsByFatura(transactions).get(ym) ?? [],
+    [transactions, ym],
+  );
+  const faturaTotal = faturaItems.reduce((s, t) => s + t.amount, 0);
+  const faturaPaid = faturaPayments.find((f) => f.yearMonth === ym)?.paid ?? false;
+  const showFaturaRow =
+    faturaItems.length > 0 && (filterType === "all" || filterType === "expense");
 
   function openNew() {
     setForm(emptyForm());
@@ -720,7 +737,28 @@ export function Transactions() {
       )}
 
       <Card>
-        {sorted.length === 0 ? (
+        {showFaturaRow && (
+          <Link
+            to="/fatura"
+            className="py-2.5 flex items-center justify-between gap-3 border-b border-[var(--border)] mb-1 hover:opacity-80"
+          >
+            <div className="min-w-0 flex items-center gap-2">
+              <CreditCard size={16} className="text-[var(--card)] shrink-0" />
+              <div>
+                <div className="font-medium">FATURA DO CARTÃO</div>
+                <div className="text-xs text-[var(--text-muted)]">
+                  {faturaItems.length} compra{faturaItems.length !== 1 ? "s" : ""} ·{" "}
+                  {faturaPaid ? "paga" : "em aberto"} · ver detalhes em Fatura do
+                  Cartão
+                </div>
+              </div>
+            </div>
+            <span className="text-[var(--expense)] font-medium shrink-0">
+              -{formatBRL(faturaTotal)}
+            </span>
+          </Link>
+        )}
+        {sorted.length === 0 && !showFaturaRow ? (
           <p className="text-sm text-[var(--text-muted)]">
             Nenhum lançamento em {formatYearMonth(ym)}.
           </p>

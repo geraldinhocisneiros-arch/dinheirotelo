@@ -5,7 +5,7 @@ import { formatBRL, formatDateBR } from "@/lib/format";
 import { creditCardTransactionsByFatura } from "@/lib/selectors";
 import { currentYearMonth, formatYearMonth } from "@/lib/fatura";
 import { reconcileNubankCsv, type ReconcileResult } from "@/lib/nubankReconcile";
-import { CheckCircle2, Circle, Upload, X } from "lucide-react";
+import { CheckCircle2, Circle, Trash2, Upload, X } from "lucide-react";
 
 export function Fatura() {
   const transactions = useFinanceStore((s) => s.transactions);
@@ -13,6 +13,7 @@ export function Fatura() {
   const faturaPayments = useFinanceStore((s) => s.faturaPayments);
   const setFaturaPaid = useFinanceStore((s) => s.setFaturaPaid);
   const importTransactions = useFinanceStore((s) => s.importTransactions);
+  const removeTransaction = useFinanceStore((s) => s.removeTransaction);
 
   const categoryById = Object.fromEntries(categories.map((c) => [c.id, c]));
   const byFatura = useMemo(
@@ -275,16 +276,27 @@ export function Fatura() {
                         .map((t) => (
                           <li
                             key={t.id}
-                            className="py-2 flex justify-between text-sm"
+                            className="py-2 flex items-center justify-between gap-3 text-sm"
                           >
-                            <div>
-                              <div>{t.description}</div>
+                            <div className="min-w-0">
+                              <div className="truncate">{t.description}</div>
                               <div className="text-xs text-[var(--text-muted)]">
                                 {formatDateBR(t.date)} ·{" "}
                                 {categoryById[t.categoryId]?.name}
                               </div>
                             </div>
-                            <div>{formatBRL(t.amount)}</div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span>{formatBRL(t.amount)}</span>
+                              <button
+                                onClick={() => removeTransaction(t.id)}
+                                aria-label="Excluir"
+                              >
+                                <Trash2
+                                  size={14}
+                                  className="text-[var(--expense)]"
+                                />
+                              </button>
+                            </div>
                           </li>
                         ))}
                     </ul>
