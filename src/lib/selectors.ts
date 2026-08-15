@@ -83,19 +83,31 @@ export function unsettledAccountTransactionsUpTo(
 }
 
 // Recorrentes de conta que ainda nao foram lancados no mes informado.
+// "Lancado" nao e so quando o recorrente foi disparado via autoLaunch/Lançar
+// no mes (vinculado por recurringTemplateId) - tambem conta se ja existe um
+// lancamento manual (ex: digitado direto em Lançamentos, ou vindo de uma
+// conciliacao de extrato) com a mesma descricao e tipo neste mes. Sem isso,
+// um recorrente que voce ja pagou/recebeu por fora continuaria contando como
+// "ainda falta" e descontaria a projecao de novo, em cima do que ja esta no
+// saldo atual.
 export function pendingRecurringInMonth(
   templates: RecurringTemplate[],
   transactions: Transaction[],
   yearMonth: string,
 ): RecurringTemplate[] {
-  return templates.filter(
-    (t) =>
-      t.active &&
-      t.paymentMethod === "account" &&
-      !transactions.some(
-        (tx) => tx.recurringTemplateId === t.id && monthOf(tx.date) === yearMonth,
-      ),
-  );
+  return templates.filter((t) => {
+    if (!t.active || t.paymentMethod !== "account") return false;
+    return !transactions.some((tx) => {
+      if (monthOf(tx.date) !== yearMonth || tx.paymentMethod !== "account") {
+        return false;
+      }
+      if (tx.recurringTemplateId === t.id) return true;
+      return (
+        tx.type === t.type &&
+        tx.description.trim().toLowerCase() === t.description.trim().toLowerCase()
+      );
+    });
+  });
 }
 
 // Parte do orcamento (Feira, Gasolina etc.) ainda nao gasta no mes
