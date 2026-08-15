@@ -46,9 +46,11 @@ export function Dashboard() {
   const cardTotal = cardPurchases.reduce((s, t) => s + t.amount, 0);
   const faturaPaid = faturaPayments.find((f) => f.yearMonth === ym)?.paid ?? false;
 
-  const monthTransactions = [...transactionsInMonth(transactions, ym)].sort((a, b) =>
-    b.date.localeCompare(a.date),
-  );
+  // Compras no cartao ja aparecem resumidas no card "Fatura em aberto" acima -
+  // aqui ficam so os lancamentos de conta, pra nao repetir o mesmo valor.
+  const monthTransactions = transactionsInMonth(transactions, ym)
+    .filter((t) => t.paymentMethod !== "credit_card")
+    .sort((a, b) => b.date.localeCompare(a.date));
 
   const categoryById = Object.fromEntries(categories.map((c) => [c.id, c]));
 
