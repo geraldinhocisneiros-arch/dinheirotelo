@@ -1,6 +1,5 @@
 import type { Budget, FaturaPayment, RecurringTemplate, Transaction } from "@/lib/types";
 import { currentYearMonth, faturaYearMonth } from "@/lib/fatura";
-import { shiftMonth } from "@/lib/date";
 
 export function monthOf(dateIso: string): string {
   return dateIso.slice(0, 7);
@@ -86,44 +85,28 @@ export function pendingRecurringInMonth(
   );
 }
 
-// Parte do orcamento (Feira, Gasolina etc.) ainda nao gasta em um mes, que a
-// projecao assume que vai ser gasta ate o fim daquele mes - por isso o
-// orcamento ja "conta como saida" desde o dia 1, igual um recorrente.
-// Conforme voce realmente gasta (ou nao) em cada categoria, essa sobra some
-// sozinha e vira saldo de verdade; se estourar o limite, o gasto real ja
-// pesa no saldo normalmente, sem precisar de ajuste extra aqui. Usa gasto de
-// qualquer forma de pagamento (conta ou cartao): uma compra no cartao ja
-// entra no saldo projetado pela fatura em aberto (ver pendingFaturaUpTo), e
-// contar de novo aqui como "ainda falta gastar" duplicaria o desconto.
-function pendingBudgetForSingleMonth(
-  transactions: Transaction[],
-  budgets: Budget[],
-  yearMonth: string,
-): number {
-  return budgets.reduce((sum, b) => {
-    const spent = categorySpendInMonth(transactions, b.categoryId, yearMonth);
-    return sum + Math.max(b.monthlyLimit - spent, 0);
-  }, 0);
-}
-
-// Soma o orcamento pendente do mes atual ate o mes projetado (inclusive) -
-// cada mes futuro entra com o orcamento cheio, igual um recorrente. Meses ja
-// fechados (no passado) nao entram: o que nao foi gasto neles ja ficou no
-// saldo, sem precisar de ajuste.
+// Parte do orcamento (Feira, Gasolina etc.) ainda nao gasta no mes
+// projetado, que a projecao assume que vai ser gasta ate o fim daquele mes -
+// por isso o orcamento ja "conta como saida" desde o dia 1, igual um
+// recorrente. Conforme voce realmente gasta (ou nao) em cada categoria, essa
+// sobra some sozinha e vira saldo de verdade; se estourar o limite, o gasto
+// real ja pesa no saldo normalmente, sem precisar de ajuste extra aqui. Usa
+// gasto de qualquer forma de pagamento (conta ou cartao): uma compra no
+// cartao ja entra no saldo projetado pela fatura em aberto (ver
+// pendingFaturaUpTo), e contar de novo aqui como "ainda falta gastar"
+// duplicaria o desconto. So considera o mes projetado em si (nao soma com
+// meses anteriores) - um mes ja fechado nao entra: o que nao foi gasto nele
+// ja ficou no saldo, sem precisar de ajuste.
 export function pendingBudgetInMonth(
   transactions: Transaction[],
   budgets: Budget[],
   yearMonth: string,
 ): number {
-  const now = currentYearMonth();
-  if (yearMonth < now) return 0;
-  let sum = 0;
-  let ym = now;
-  while (ym <= yearMonth) {
-    sum += pendingBudgetForSingleMonth(transactions, budgets, ym);
-    ym = shiftMonth(ym, 1);
-  }
-  return sum;
+  if (yearMonth < currentYearMonth()) return 0;
+  return budgets.reduce((sum, b) => {
+    const spent = categorySpendInMonth(transactions, b.categoryId, yearMonth);
+    return sum + Math.max(b.monthlyLimit - spent, 0);
+  }, 0);
 }
 
 // Saldo projetado: saldo ja lancado ate o fim do mes + recorrentes de conta
