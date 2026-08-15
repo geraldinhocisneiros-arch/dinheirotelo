@@ -302,7 +302,7 @@ export function Fatura() {
                     </ul>
                     <Button
                       variant={paid ? "secondary" : "primary"}
-                      onClick={() => setFaturaPaid(ym, !paid, total)}
+                      onClick={() => setFaturaPaid(ym, !paid)}
                       className="flex items-center gap-1"
                     >
                       {paid ? (

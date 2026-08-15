@@ -81,6 +81,7 @@ export function CloudSync() {
         }
       }
       useFinanceStore.getState().autoLaunchRecurring();
+      useFinanceStore.getState().syncPaidFaturaAmounts();
       readyRef.current = true;
     })();
     return () => {

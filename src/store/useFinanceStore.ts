@@ -10,7 +10,11 @@ import type {
 import { todayIso } from "@/lib/format";
 import { shiftMonth, daysInMonth } from "@/lib/date";
 import { currentYearMonth } from "@/lib/fatura";
-import { findDuplicateRecurringTemplates } from "@/lib/selectors";
+import {
+  creditCardTransactionsByFatura,
+  faturaPaymentDescription,
+  findDuplicateRecurringTemplates,
+} from "@/lib/selectors";
 
 function uid(): string {
   return crypto.randomUUID();
@@ -70,7 +74,8 @@ interface FinanceState {
   setBudget: (categoryId: string, monthlyLimit: number) => void;
   removeBudget: (categoryId: string) => void;
 
-  setFaturaPaid: (yearMonth: string, paid: boolean, total: number) => void;
+  setFaturaPaid: (yearMonth: string, paid: boolean) => void;
+  syncPaidFaturaAmounts: () => void;
 }
 
 function withSettled(t: NewTransaction): Transaction {
@@ -86,22 +91,28 @@ export const useFinanceStore = create<FinanceState>()(
       budgets: defaultBudgets,
       faturaPayments: [],
 
-      addTransaction: (t) =>
+      addTransaction: (t) => {
         set((state) => ({
           transactions: [...state.transactions, withSettled(t)],
-        })),
+        }));
+        get().syncPaidFaturaAmounts();
+      },
 
-      updateTransaction: (id, t) =>
+      updateTransaction: (id, t) => {
         set((state) => ({
           transactions: state.transactions.map((tx) =>
             tx.id === id ? { ...t, id } : tx,
           ),
-        })),
+        }));
+        get().syncPaidFaturaAmounts();
+      },
 
-      removeTransaction: (id) =>
+      removeTransaction: (id) => {
         set((state) => ({
           transactions: state.transactions.filter((tx) => tx.id !== id),
-        })),
+        }));
+        get().syncPaidFaturaAmounts();
+      },
 
       removeAllTransactions: () =>
         set(() => ({ transactions: [], faturaPayments: [] })),
@@ -113,14 +124,16 @@ export const useFinanceStore = create<FinanceState>()(
           ),
         })),
 
-      importTransactions: (newCategories, newTransactions) =>
+      importTransactions: (newCategories, newTransactions) => {
         set((state) => ({
           categories: [...state.categories, ...newCategories],
           transactions: [
             ...state.transactions,
             ...newTransactions.map(withSettled),
           ],
-        })),
+        }));
+        get().syncPaidFaturaAmounts();
+      },
 
       addCategory: (c) =>
         set((state) => ({
@@ -270,12 +283,13 @@ export const useFinanceStore = create<FinanceState>()(
           budgets: state.budgets.filter((b) => b.categoryId !== categoryId),
         })),
 
-      setFaturaPaid: (yearMonth, paid, total) =>
+      setFaturaPaid: (yearMonth, paid) => {
         set((state) => {
           const exists = state.faturaPayments.some(
             (f) => f.yearMonth === yearMonth,
           );
           const paidDate = paid ? todayIso() : undefined;
+          const label = faturaPaymentDescription(yearMonth);
           return {
             faturaPayments: exists
               ? state.faturaPayments.map((f) =>
@@ -283,24 +297,62 @@ export const useFinanceStore = create<FinanceState>()(
                 )
               : [...state.faturaPayments, { yearMonth, paid, paidDate }],
             transactions: paid
-              ? [
-                  ...state.transactions,
-                  {
-                    id: uid(),
-                    date: paidDate!,
-                    description: `Fatura do cartão ${yearMonth}`,
-                    amount: total,
-                    type: "expense",
-                    categoryId: "cat-outros-despesa",
-                    paymentMethod: "account" as const,
-                    settled: true,
-                  },
-                ]
-              : state.transactions.filter(
-                  (tx) => tx.description !== `Fatura do cartão ${yearMonth}`,
-                ),
+              ? state.transactions
+              : state.transactions.filter((tx) => tx.description !== label),
           };
-        }),
+        });
+        get().syncPaidFaturaAmounts();
+      },
+
+      // Mantem o lancamento sintetico "Fatura do cartao {mes}" de cada
+      // fatura ja marcada como paga sempre igual ao total ATUAL das compras
+      // daquele mes - roda depois de qualquer mudanca em transactions (nova
+      // compra, edicao, exclusao, importacao) pra nunca deixar o valor pago
+      // "congelado" e desatualizado se uma compra for corrigida depois.
+      syncPaidFaturaAmounts: () => {
+        const state = get();
+        const byFatura = creditCardTransactionsByFatura(state.transactions);
+        let changed = false;
+        let transactions = state.transactions;
+        for (const f of state.faturaPayments) {
+          if (!f.paid) continue;
+          const label = faturaPaymentDescription(f.yearMonth);
+          const currentTotal = (byFatura.get(f.yearMonth) ?? []).reduce(
+            (s, t) => s + t.amount,
+            0,
+          );
+          const existing = transactions.find((tx) => tx.description === label);
+          if (currentTotal <= 0) {
+            if (existing) {
+              transactions = transactions.filter((tx) => tx.description !== label);
+              changed = true;
+            }
+            continue;
+          }
+          if (!existing) {
+            transactions = [
+              ...transactions,
+              {
+                id: uid(),
+                date: f.paidDate ?? todayIso(),
+                description: label,
+                amount: currentTotal,
+                type: "expense",
+                categoryId: "cat-outros-despesa",
+                paymentMethod: "account" as const,
+                settled: true,
+              },
+            ];
+            changed = true;
+          } else if (existing.amount !== currentTotal) {
+            transactions = transactions.map((tx) =>
+              tx.description === label ? { ...tx, amount: currentTotal } : tx,
+            );
+            changed = true;
+          }
+        }
+        if (changed) set({ transactions });
+      },
     }),
     {
       name: "financas-casa-store",

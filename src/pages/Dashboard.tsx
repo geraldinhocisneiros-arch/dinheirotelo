@@ -6,7 +6,9 @@ import { formatBRL, formatDateBR, todayIso } from "@/lib/format";
 import {
   accountBalanceSettled,
   categorySpendInMonth,
+  creditCardTransactionsByFatura,
   monthIncomeExpense,
+  openFaturasUpTo,
   pendingBudgetInMonth,
   pendingFaturaInMonth,
   pendingRecurringInMonth,
@@ -14,7 +16,7 @@ import {
   transactionsInMonth,
   unsettledAccountTransactionsUpTo,
 } from "@/lib/selectors";
-import { currentYearMonth, faturaYearMonth, formatYearMonth } from "@/lib/fatura";
+import { currentYearMonth, formatYearMonth } from "@/lib/fatura";
 import { TrendingUp, TrendingDown, Wallet, Sparkles, Check, Circle } from "lucide-react";
 
 export function Dashboard() {
@@ -40,13 +42,12 @@ export function Dashboard() {
   const pendingBudget = pendingBudgetInMonth(transactions, budgets, ym);
   const pendingFatura = pendingFaturaInMonth(transactions, faturaPayments, ym);
   const expenseWithFatura = expense + pendingFatura;
+  const openFaturas = openFaturasUpTo(transactions, faturaPayments, ym);
   const unsettledAccount = [...unsettledAccountTransactionsUpTo(transactions, ym)].sort(
     (a, b) => a.date.localeCompare(b.date),
   );
 
-  const cardPurchases = transactions.filter(
-    (t) => t.paymentMethod === "credit_card" && faturaYearMonth(t.date) === ym,
-  );
+  const cardPurchases = creditCardTransactionsByFatura(transactions).get(ym) ?? [];
   const cardTotal = cardPurchases.reduce((s, t) => s + t.amount, 0);
   const faturaPaid = faturaPayments.find((f) => f.yearMonth === ym)?.paid ?? false;
 
@@ -159,17 +160,22 @@ export function Dashboard() {
               </span>
             </li>
           )}
-          {pendingFatura > 0 && (
-            <li className="py-1.5 flex items-center justify-between gap-3">
+          {openFaturas.map((f) => (
+            <li
+              key={f.yearMonth}
+              className="py-1.5 flex items-center justify-between gap-3"
+            >
               <span>
                 Fatura do cartão em aberto{" "}
-                <span className="text-[var(--text-muted)]">({formatYearMonth(ym)})</span>
+                <span className="text-[var(--text-muted)]">
+                  ({formatYearMonth(f.yearMonth)})
+                </span>
               </span>
               <span className="text-[var(--expense)] shrink-0">
-                -{formatBRL(pendingFatura)}
+                -{formatBRL(f.total)}
               </span>
             </li>
-          )}
+          ))}
           <li className="py-1.5 flex items-center justify-between gap-3 font-semibold">
             <span>Projeção fim do mês</span>
             <span

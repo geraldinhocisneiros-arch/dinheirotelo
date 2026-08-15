@@ -146,6 +146,12 @@ export function projectedBalance(
   return base + pendingDelta - pendingBudget - pendingFatura;
 }
 
+// Descricao usada pro lancamento sintetico que representa "paguei a fatura
+// desse mes" - centralizado aqui pra loja e selectors usarem a mesma string.
+export function faturaPaymentDescription(yearMonth: string): string {
+  return `Fatura do cartão ${yearMonth}`;
+}
+
 export function creditCardTransactionsByFatura(
   transactions: Transaction[],
 ): Map<string, Transaction[]> {
@@ -178,23 +184,38 @@ export function pendingFaturaInMonth(
     .reduce((s, t) => s + t.amount, 0);
 }
 
-// Soma todas as faturas ainda em aberto ate o mes projetado (inclusive) -
-// uma fatura nao paga continua pesando no saldo projetado dos meses
-// seguintes, ate que seja marcada como paga.
+// Todas as faturas ainda em aberto ate o mes projetado (inclusive), uma por
+// mes - uma fatura nao paga continua pesando no saldo projetado dos meses
+// seguintes, ate que seja marcada como paga. Retorna a lista (nao so o
+// total) pra dar pra mostrar cada mes em aberto na tela, senao a projecao
+// soma coisa que ninguem consegue ver de onde veio.
+export function openFaturasUpTo(
+  transactions: Transaction[],
+  faturaPayments: FaturaPayment[],
+  yearMonth: string,
+): { yearMonth: string; total: number }[] {
+  const byFatura = creditCardTransactionsByFatura(transactions);
+  const result: { yearMonth: string; total: number }[] = [];
+  for (const [ym, items] of byFatura) {
+    if (ym > yearMonth) continue;
+    const paid = faturaPayments.find((f) => f.yearMonth === ym)?.paid ?? false;
+    if (paid) continue;
+    const total = items.reduce((s, t) => s + t.amount, 0);
+    if (total > 0) result.push({ yearMonth: ym, total });
+  }
+  return result.sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));
+}
+
+// Soma todas as faturas ainda em aberto ate o mes projetado (inclusive).
 export function pendingFaturaUpTo(
   transactions: Transaction[],
   faturaPayments: FaturaPayment[],
   yearMonth: string,
 ): number {
-  const byFatura = creditCardTransactionsByFatura(transactions);
-  let sum = 0;
-  for (const [ym, items] of byFatura) {
-    if (ym > yearMonth) continue;
-    const paid = faturaPayments.find((f) => f.yearMonth === ym)?.paid ?? false;
-    if (paid) continue;
-    sum += items.reduce((s, t) => s + t.amount, 0);
-  }
-  return sum;
+  return openFaturasUpTo(transactions, faturaPayments, yearMonth).reduce(
+    (sum, f) => sum + f.total,
+    0,
+  );
 }
 
 function recurringDedupeKey(t: RecurringTemplate): string {
