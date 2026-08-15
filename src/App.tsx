@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { HashRouter, Route, Routes } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { Dashboard } from "@/pages/Dashboard";
@@ -7,17 +6,12 @@ import { Fatura } from "@/pages/Fatura";
 import { Recurring } from "@/pages/Recurring";
 import { Budgets } from "@/pages/Budgets";
 import { Reports } from "@/pages/Reports";
-import { useFinanceStore } from "@/store/useFinanceStore";
+import { CloudSync } from "@/components/CloudSync";
 
 export default function App() {
-  const autoLaunchRecurring = useFinanceStore((s) => s.autoLaunchRecurring);
-
-  useEffect(() => {
-    autoLaunchRecurring();
-  }, [autoLaunchRecurring]);
-
   return (
     <HashRouter>
+      <CloudSync />
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />
