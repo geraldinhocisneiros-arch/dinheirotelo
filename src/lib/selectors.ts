@@ -1,4 +1,4 @@
-import type { Budget, RecurringTemplate, Transaction } from "@/lib/types";
+import type { Budget, FaturaPayment, RecurringTemplate, Transaction } from "@/lib/types";
 import { currentYearMonth, faturaYearMonth } from "@/lib/fatura";
 import { shiftMonth } from "@/lib/date";
 
@@ -91,21 +91,17 @@ export function pendingRecurringInMonth(
 // orcamento ja "conta como saida" desde o dia 1, igual um recorrente.
 // Conforme voce realmente gasta (ou nao) em cada categoria, essa sobra some
 // sozinha e vira saldo de verdade; se estourar o limite, o gasto real ja
-// pesa no saldo normalmente, sem precisar de ajuste extra aqui.
+// pesa no saldo normalmente, sem precisar de ajuste extra aqui. Usa gasto de
+// qualquer forma de pagamento (conta ou cartao): uma compra no cartao ja
+// entra no saldo projetado pela fatura em aberto (ver pendingFaturaUpTo), e
+// contar de novo aqui como "ainda falta gastar" duplicaria o desconto.
 function pendingBudgetForSingleMonth(
   transactions: Transaction[],
   budgets: Budget[],
   yearMonth: string,
 ): number {
   return budgets.reduce((sum, b) => {
-    const spent = transactionsInMonth(transactions, yearMonth)
-      .filter(
-        (t) =>
-          t.categoryId === b.categoryId &&
-          t.type === "expense" &&
-          t.paymentMethod === "account",
-      )
-      .reduce((s, t) => s + t.amount, 0);
+    const spent = categorySpendInMonth(transactions, b.categoryId, yearMonth);
     return sum + Math.max(b.monthlyLimit - spent, 0);
   }, 0);
 }
@@ -132,13 +128,15 @@ export function pendingBudgetInMonth(
 
 // Saldo projetado: saldo ja lancado ate o fim do mes + recorrentes de conta
 // que ainda vao entrar/sair nesse mes mas ainda nao foram lancados + o que
-// ainda resta dos orcamentos do mes (assumido como saida ate o fim do mes).
+// ainda resta dos orcamentos do mes (assumido como saida ate o fim do mes) +
+// faturas do cartao ainda em aberto (assumidas como saida ate serem pagas).
 // Atualiza sozinho conforme o estado muda (React re-renderiza a partir do
 // store), entao "tempo real" aqui significa: sempre reflete o estado atual.
 export function projectedBalance(
   transactions: Transaction[],
   templates: RecurringTemplate[],
   budgets: Budget[],
+  faturaPayments: FaturaPayment[],
   yearMonth: string,
 ): number {
   const base = accountBalanceUpTo(transactions, yearMonth);
@@ -148,7 +146,8 @@ export function projectedBalance(
     0,
   );
   const pendingBudget = pendingBudgetInMonth(transactions, budgets, yearMonth);
-  return base + pendingDelta - pendingBudget;
+  const pendingFatura = pendingFaturaUpTo(transactions, faturaPayments, yearMonth);
+  return base + pendingDelta - pendingBudget - pendingFatura;
 }
 
 export function creditCardTransactionsByFatura(
@@ -163,4 +162,41 @@ export function creditCardTransactionsByFatura(
     map.set(ym, list);
   }
   return map;
+}
+
+// Total da fatura de um mes especifico, so enquanto ela ainda nao foi paga -
+// depois de paga vira uma saida de conta de verdade (lancada na data do
+// pagamento), entao ja aparece nas contas normalmente e nao precisa mais
+// entrar aqui.
+export function pendingFaturaInMonth(
+  transactions: Transaction[],
+  faturaPayments: FaturaPayment[],
+  yearMonth: string,
+): number {
+  const paid = faturaPayments.find((f) => f.yearMonth === yearMonth)?.paid ?? false;
+  if (paid) return 0;
+  return transactions
+    .filter(
+      (t) => t.paymentMethod === "credit_card" && faturaYearMonth(t.date) === yearMonth,
+    )
+    .reduce((s, t) => s + t.amount, 0);
+}
+
+// Soma todas as faturas ainda em aberto ate o mes projetado (inclusive) -
+// uma fatura nao paga continua pesando no saldo projetado dos meses
+// seguintes, ate que seja marcada como paga.
+export function pendingFaturaUpTo(
+  transactions: Transaction[],
+  faturaPayments: FaturaPayment[],
+  yearMonth: string,
+): number {
+  const byFatura = creditCardTransactionsByFatura(transactions);
+  let sum = 0;
+  for (const [ym, items] of byFatura) {
+    if (ym > yearMonth) continue;
+    const paid = faturaPayments.find((f) => f.yearMonth === ym)?.paid ?? false;
+    if (paid) continue;
+    sum += items.reduce((s, t) => s + t.amount, 0);
+  }
+  return sum;
 }

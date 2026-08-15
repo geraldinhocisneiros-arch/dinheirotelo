@@ -8,6 +8,7 @@ import {
   categorySpendInMonth,
   monthIncomeExpense,
   pendingBudgetInMonth,
+  pendingFaturaInMonth,
   pendingRecurringInMonth,
   projectedBalance,
   transactionsInMonth,
@@ -28,8 +29,16 @@ export function Dashboard() {
   const currentBalance = accountBalanceSettled(transactions);
   const { income, expense } = monthIncomeExpense(transactions, ym);
   const pendingRecurring = pendingRecurringInMonth(recurringTemplates, transactions, ym);
-  const projected = projectedBalance(transactions, recurringTemplates, budgets, ym);
+  const projected = projectedBalance(
+    transactions,
+    recurringTemplates,
+    budgets,
+    faturaPayments,
+    ym,
+  );
   const pendingBudget = pendingBudgetInMonth(transactions, budgets, ym);
+  const pendingFatura = pendingFaturaInMonth(transactions, faturaPayments, ym);
+  const expenseWithFatura = expense + pendingFatura;
 
   const cardPurchases = transactions.filter(
     (t) => t.paymentMethod === "credit_card" && faturaYearMonth(t.date) === ym,
@@ -88,7 +97,7 @@ export function Dashboard() {
             <TrendingDown size={16} className="text-[var(--expense)]" /> Saídas do mês
           </div>
           <div className="text-2xl font-semibold text-[var(--expense)]">
-            {formatBRL(expense)}
+            {formatBRL(expenseWithFatura)}
           </div>
         </Card>
       </div>
@@ -135,6 +144,12 @@ export function Dashboard() {
         <p className="text-xs text-[var(--text-muted)]">
           Compras no cartão até o dia 8 entram nessa fatura; a partir do dia 9,
           vão para a fatura do mês seguinte. Veja detalhes em "Fatura do Cartão".
+          {!faturaPaid && cardTotal > 0 && (
+            <>
+              {" "}Enquanto não for marcada como paga, essa fatura já entra nas
+              saídas e na projeção de {formatYearMonth(ym)}.
+            </>
+          )}
         </p>
       </Card>
 
