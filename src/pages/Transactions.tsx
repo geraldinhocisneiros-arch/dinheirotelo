@@ -6,6 +6,7 @@ import { formatBRL, formatDateBR, todayIso } from "@/lib/format";
 import { currentYearMonth, faturaYearMonth, formatYearMonth } from "@/lib/fatura";
 import { importTransactionsFromCsv, type ImportResult } from "@/lib/importTransactions";
 import { reconcileBankStatement, type BankReconcileResult } from "@/lib/bankReconcile";
+import { exportBackup, parseBackup, applyBackup } from "@/lib/backup";
 import type { EntryType, PaymentMethod, Transaction } from "@/lib/types";
 import {
   Trash2,
@@ -17,6 +18,9 @@ import {
   Check,
   Circle,
   AlertTriangle,
+  Download,
+  Copy,
+  FileUp,
 } from "lucide-react";
 
 type FormState = Omit<Transaction, "id">;
@@ -46,6 +50,53 @@ export function Transactions() {
   function handleConfirmClearAll() {
     removeAllTransactions();
     setShowClearConfirm(false);
+  }
+
+  const [showExport, setShowExport] = useState(false);
+  const [exportCopied, setExportCopied] = useState(false);
+  const [showImportBackup, setShowImportBackup] = useState(false);
+  const [backupText, setBackupText] = useState("");
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const backupFileInputRef = useRef<HTMLInputElement>(null);
+
+  function openExport() {
+    setExportCopied(false);
+    setShowExport(true);
+  }
+
+  function handleCopyExport() {
+    const json = exportBackup();
+    navigator.clipboard?.writeText(json).catch(() => {});
+    setExportCopied(true);
+    setTimeout(() => setExportCopied(false), 1500);
+  }
+
+  function openImportBackup() {
+    setBackupText("");
+    setBackupError(null);
+    setShowImportBackup(true);
+  }
+
+  async function handleBackupFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    setBackupText(text);
+    if (backupFileInputRef.current) backupFileInputRef.current.value = "";
+  }
+
+  function handleConfirmImportBackup() {
+    setBackupError(null);
+    try {
+      const data = parseBackup(backupText);
+      applyBackup(data);
+      setShowImportBackup(false);
+      setBackupText("");
+    } catch {
+      setBackupError(
+        "Não consegui ler esse backup. Confira se colou o conteúdo completo.",
+      );
+    }
   }
 
   const [showForm, setShowForm] = useState(false);
@@ -186,6 +237,16 @@ export function Transactions() {
               <Upload size={16} /> Importar CSV
             </span>
           </Button>
+          <Button variant="secondary" onClick={openExport}>
+            <span className="flex items-center gap-1">
+              <Download size={16} /> Exportar tudo
+            </span>
+          </Button>
+          <Button variant="secondary" onClick={openImportBackup}>
+            <span className="flex items-center gap-1">
+              <FileUp size={16} /> Importar backup
+            </span>
+          </Button>
           <Button onClick={openNew}>
             <span className="flex items-center gap-1">
               <Plus size={16} /> Novo lançamento
@@ -200,6 +261,86 @@ export function Transactions() {
           )}
         </div>
       </div>
+
+      {showExport && (
+        <Card>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-medium">Exportar tudo</h2>
+            <button onClick={() => setShowExport(false)} aria-label="Fechar">
+              <X size={18} />
+            </button>
+          </div>
+          <p className="text-sm text-[var(--text-muted)] mb-3">
+            Copie esse conteúdo e cole em "Importar backup" no outro
+            aparelho/link pra trazer todos os seus dados pra lá.
+          </p>
+          <textarea
+            readOnly
+            value={exportBackup()}
+            rows={8}
+            className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] text-xs font-mono"
+            onFocus={(e) => e.target.select()}
+          />
+          <div className="flex justify-end mt-3">
+            <Button
+              onClick={handleCopyExport}
+              className="flex items-center gap-1"
+            >
+              {exportCopied ? <Check size={15} /> : <Copy size={15} />}
+              {exportCopied ? "Copiado!" : "Copiar tudo"}
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {showImportBackup && (
+        <Card>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-medium">Importar backup</h2>
+            <button onClick={() => setShowImportBackup(false)} aria-label="Fechar">
+              <X size={18} />
+            </button>
+          </div>
+          <p className="text-sm text-[var(--text-muted)] mb-3">
+            Isso substitui TODOS os dados deste aparelho pelos do backup. Cole
+            o conteúdo copiado em "Exportar tudo", ou envie o arquivo.
+          </p>
+          <div className="flex flex-col gap-3">
+            <input
+              ref={backupFileInputRef}
+              type="file"
+              accept=".json,application/json"
+              onChange={handleBackupFileChange}
+              className="text-sm"
+            />
+            <textarea
+              value={backupText}
+              onChange={(e) => setBackupText(e.target.value)}
+              rows={8}
+              placeholder='{"categories": [...], "transactions": [...], ...}'
+              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+            />
+            {backupError && (
+              <p className="text-sm text-[var(--expense)]">{backupError}</p>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setShowImportBackup(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="danger"
+                onClick={handleConfirmImportBackup}
+                disabled={!backupText.trim()}
+              >
+                Substituir pelos dados do backup
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {showClearConfirm && (
         <Card className="border-[var(--expense)]">
