@@ -55,9 +55,10 @@ export function Budgets() {
         </div>
       </div>
       <p className="text-sm text-[var(--text-muted)]">
-        Defina um limite mensal por categoria. O que você não gastar não é
-        "reservado" em lugar nenhum — continua fazendo parte do seu saldo em
-        conta normalmente.
+        Defina um limite mensal por categoria. A "Projeção fim do mês" no
+        Painel já conta o orçamento inteiro como saída desde o dia 1 — o que
+        sobrar vira saldo positivo automaticamente, e se você estourar o
+        limite, o gasto a mais já pesa no saldo normalmente.
       </p>
 
       {totalLimit > 0 && (

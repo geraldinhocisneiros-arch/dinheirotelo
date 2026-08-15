@@ -1,5 +1,6 @@
-import type { RecurringTemplate, Transaction } from "@/lib/types";
-import { faturaYearMonth } from "@/lib/fatura";
+import type { Budget, RecurringTemplate, Transaction } from "@/lib/types";
+import { currentYearMonth, faturaYearMonth } from "@/lib/fatura";
+import { shiftMonth } from "@/lib/date";
 
 export function monthOf(dateIso: string): string {
   return dateIso.slice(0, 7);
@@ -85,13 +86,59 @@ export function pendingRecurringInMonth(
   );
 }
 
+// Parte do orcamento (Feira, Gasolina etc.) ainda nao gasta em um mes, que a
+// projecao assume que vai ser gasta ate o fim daquele mes - por isso o
+// orcamento ja "conta como saida" desde o dia 1, igual um recorrente.
+// Conforme voce realmente gasta (ou nao) em cada categoria, essa sobra some
+// sozinha e vira saldo de verdade; se estourar o limite, o gasto real ja
+// pesa no saldo normalmente, sem precisar de ajuste extra aqui.
+function pendingBudgetForSingleMonth(
+  transactions: Transaction[],
+  budgets: Budget[],
+  yearMonth: string,
+): number {
+  return budgets.reduce((sum, b) => {
+    const spent = transactionsInMonth(transactions, yearMonth)
+      .filter(
+        (t) =>
+          t.categoryId === b.categoryId &&
+          t.type === "expense" &&
+          t.paymentMethod === "account",
+      )
+      .reduce((s, t) => s + t.amount, 0);
+    return sum + Math.max(b.monthlyLimit - spent, 0);
+  }, 0);
+}
+
+// Soma o orcamento pendente do mes atual ate o mes projetado (inclusive) -
+// cada mes futuro entra com o orcamento cheio, igual um recorrente. Meses ja
+// fechados (no passado) nao entram: o que nao foi gasto neles ja ficou no
+// saldo, sem precisar de ajuste.
+export function pendingBudgetInMonth(
+  transactions: Transaction[],
+  budgets: Budget[],
+  yearMonth: string,
+): number {
+  const now = currentYearMonth();
+  if (yearMonth < now) return 0;
+  let sum = 0;
+  let ym = now;
+  while (ym <= yearMonth) {
+    sum += pendingBudgetForSingleMonth(transactions, budgets, ym);
+    ym = shiftMonth(ym, 1);
+  }
+  return sum;
+}
+
 // Saldo projetado: saldo ja lancado ate o fim do mes + recorrentes de conta
-// que ainda vao entrar/sair nesse mes mas ainda nao foram lancados.
+// que ainda vao entrar/sair nesse mes mas ainda nao foram lancados + o que
+// ainda resta dos orcamentos do mes (assumido como saida ate o fim do mes).
 // Atualiza sozinho conforme o estado muda (React re-renderiza a partir do
 // store), entao "tempo real" aqui significa: sempre reflete o estado atual.
 export function projectedBalance(
   transactions: Transaction[],
   templates: RecurringTemplate[],
+  budgets: Budget[],
   yearMonth: string,
 ): number {
   const base = accountBalanceUpTo(transactions, yearMonth);
@@ -100,7 +147,8 @@ export function projectedBalance(
     (sum, t) => sum + (t.type === "income" ? t.amount : -t.amount),
     0,
   );
-  return base + pendingDelta;
+  const pendingBudget = pendingBudgetInMonth(transactions, budgets, yearMonth);
+  return base + pendingDelta - pendingBudget;
 }
 
 export function creditCardTransactionsByFatura(

@@ -7,6 +7,7 @@ import {
   accountBalanceSettled,
   categorySpendInMonth,
   monthIncomeExpense,
+  pendingBudgetInMonth,
   pendingRecurringInMonth,
   projectedBalance,
   transactionsInMonth,
@@ -27,7 +28,8 @@ export function Dashboard() {
   const currentBalance = accountBalanceSettled(transactions);
   const { income, expense } = monthIncomeExpense(transactions, ym);
   const pendingRecurring = pendingRecurringInMonth(recurringTemplates, transactions, ym);
-  const projected = projectedBalance(transactions, recurringTemplates, ym);
+  const projected = projectedBalance(transactions, recurringTemplates, budgets, ym);
+  const pendingBudget = pendingBudgetInMonth(transactions, budgets, ym);
 
   const cardPurchases = transactions.filter(
     (t) => t.paymentMethod === "credit_card" && faturaYearMonth(t.date) === ym,
@@ -135,6 +137,17 @@ export function Dashboard() {
           vão para a fatura do mês seguinte. Veja detalhes em "Fatura do Cartão".
         </p>
       </Card>
+
+      {pendingBudget > 0 && (
+        <Card>
+          <p className="text-xs text-[var(--text-muted)]">
+            A projeção acima já desconta {formatBRL(pendingBudget)} que ainda
+            resta dos orçamentos do mês (Feira, Gasolina etc.), assumindo que
+            vai ser gasto. O que não for usado sobra pro saldo sozinho; se
+            estourar o limite, o gasto a mais já entra normalmente.
+          </p>
+        </Card>
+      )}
 
       {budgets.length > 0 && (
         <Card>
