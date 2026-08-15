@@ -69,6 +69,19 @@ export function categorySpendInMonth(
     .reduce((s, t) => s + t.amount, 0);
 }
 
+// Lancamentos de conta ja cadastrados (com data <= fim do mes projetado) mas
+// ainda nao marcados como pago/recebido - eles ja entram na projecao (via
+// accountBalanceUpTo) silenciosamente, entao esse selector existe so pra
+// mostrar na tela quais sao, pra projecao nao virar uma caixa-preta.
+export function unsettledAccountTransactionsUpTo(
+  transactions: Transaction[],
+  yearMonth: string,
+): Transaction[] {
+  return transactions.filter(
+    (t) => t.paymentMethod === "account" && !t.settled && monthOf(t.date) <= yearMonth,
+  );
+}
+
 // Recorrentes de conta que ainda nao foram lancados no mes informado.
 export function pendingRecurringInMonth(
   templates: RecurringTemplate[],

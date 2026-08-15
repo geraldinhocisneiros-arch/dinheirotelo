@@ -12,6 +12,7 @@ import {
   pendingRecurringInMonth,
   projectedBalance,
   transactionsInMonth,
+  unsettledAccountTransactionsUpTo,
 } from "@/lib/selectors";
 import { currentYearMonth, faturaYearMonth, formatYearMonth } from "@/lib/fatura";
 import { TrendingUp, TrendingDown, Wallet, Sparkles, Check, Circle } from "lucide-react";
@@ -39,6 +40,9 @@ export function Dashboard() {
   const pendingBudget = pendingBudgetInMonth(transactions, budgets, ym);
   const pendingFatura = pendingFaturaInMonth(transactions, faturaPayments, ym);
   const expenseWithFatura = expense + pendingFatura;
+  const unsettledAccount = [...unsettledAccountTransactionsUpTo(transactions, ym)].sort(
+    (a, b) => a.date.localeCompare(b.date),
+  );
 
   const cardPurchases = transactions.filter(
     (t) => t.paymentMethod === "credit_card" && faturaYearMonth(t.date) === ym,
@@ -104,29 +108,78 @@ export function Dashboard() {
         </Card>
       </div>
 
-      {pendingRecurring.length > 0 && (
-        <Card>
-          <p className="text-xs text-[var(--text-muted)] mb-2">
-            A projeção acima já soma {pendingRecurring.length} recorrente
-            {pendingRecurring.length !== 1 ? "s" : ""} de {formatYearMonth(ym)} que
-            ainda {pendingRecurring.length !== 1 ? "não entraram" : "não entrou"}{" "}
-            — atualiza sozinha conforme você lança ou edita coisas:
-          </p>
-          <ul className="text-xs text-[var(--text-muted)] flex flex-wrap gap-x-3 gap-y-1">
-            {pendingRecurring.map((t) => (
-              <li key={t.id}>
+      <Card>
+        <h2 className="font-medium mb-3">
+          De onde vem a projeção de {formatYearMonth(ym)}
+        </h2>
+        <ul className="text-sm divide-y divide-[var(--border)]">
+          <li className="py-1.5 flex items-center justify-between gap-3">
+            <span>Saldo atual (hoje, {formatDateBR(today)})</span>
+            <span className="font-medium shrink-0">{formatBRL(currentBalance)}</span>
+          </li>
+          {unsettledAccount.map((t) => (
+            <li key={t.id} className="py-1.5 flex items-center justify-between gap-3">
+              <span className="min-w-0 truncate">
                 {t.description}{" "}
-                <span
-                  className={t.type === "income" ? "text-[var(--income)]" : "text-[var(--expense)]"}
-                >
-                  ({t.type === "income" ? "+" : "-"}
-                  {formatBRL(t.amount)})
+                <span className="text-[var(--text-muted)]">
+                  ({formatDateBR(t.date)}, já lançado, ainda{" "}
+                  {t.type === "income" ? "não recebido" : "não pago"})
                 </span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
+              </span>
+              <span
+                className={`shrink-0 ${t.type === "income" ? "text-[var(--income)]" : "text-[var(--expense)]"}`}
+              >
+                {t.type === "income" ? "+" : "-"}
+                {formatBRL(t.amount)}
+              </span>
+            </li>
+          ))}
+          {pendingRecurring.map((t) => (
+            <li key={t.id} className="py-1.5 flex items-center justify-between gap-3">
+              <span className="min-w-0 truncate">
+                {t.description}{" "}
+                <span className="text-[var(--text-muted)]">(recorrente, ainda não lançado)</span>
+              </span>
+              <span
+                className={`shrink-0 ${t.type === "income" ? "text-[var(--income)]" : "text-[var(--expense)]"}`}
+              >
+                {t.type === "income" ? "+" : "-"}
+                {formatBRL(t.amount)}
+              </span>
+            </li>
+          ))}
+          {pendingBudget > 0 && (
+            <li className="py-1.5 flex items-center justify-between gap-3">
+              <span>
+                Orçamento ainda não gasto (Feira, Gasolina etc.){" "}
+                <span className="text-[var(--text-muted)]">assumido como saída</span>
+              </span>
+              <span className="text-[var(--expense)] shrink-0">
+                -{formatBRL(pendingBudget)}
+              </span>
+            </li>
+          )}
+          {pendingFatura > 0 && (
+            <li className="py-1.5 flex items-center justify-between gap-3">
+              <span>
+                Fatura do cartão em aberto{" "}
+                <span className="text-[var(--text-muted)]">({formatYearMonth(ym)})</span>
+              </span>
+              <span className="text-[var(--expense)] shrink-0">
+                -{formatBRL(pendingFatura)}
+              </span>
+            </li>
+          )}
+          <li className="py-1.5 flex items-center justify-between gap-3 font-semibold">
+            <span>Projeção fim do mês</span>
+            <span
+              className={projected >= 0 ? "text-[var(--income)]" : "text-[var(--expense)]"}
+            >
+              {formatBRL(projected)}
+            </span>
+          </li>
+        </ul>
+      </Card>
 
       <Card>
         <div className="flex items-center justify-between mb-1">
@@ -154,17 +207,6 @@ export function Dashboard() {
           )}
         </p>
       </Card>
-
-      {pendingBudget > 0 && (
-        <Card>
-          <p className="text-xs text-[var(--text-muted)]">
-            A projeção acima já desconta {formatBRL(pendingBudget)} que ainda
-            resta dos orçamentos do mês (Feira, Gasolina etc.), assumindo que
-            vai ser gasto. O que não for usado sobra pro saldo sozinho; se
-            estourar o limite, o gasto a mais já entra normalmente.
-          </p>
-        </Card>
-      )}
 
       {budgets.length > 0 && (
         <Card>
