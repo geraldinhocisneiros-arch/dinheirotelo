@@ -117,6 +117,19 @@ export function reconcileNubankCsv(
     }
   }
 
+  // Quando parcelas sao antecipadas, a mesma compra pode aparecer varias
+  // vezes numa unica fatura (ex: parcela 2/10, 3/10 e 4/10 todas na fatura
+  // de agosto). So a parcela mais avancada de cada compra (mesma descricao +
+  // valor + total) deve continuar gerando parcelas futuras - as antecipadas
+  // sao so o registro daquele pagamento, nao parcelamentos paralelos.
+  const maxInstallmentByPlan = new Map<string, number>();
+  for (const row of parsed) {
+    if (row.installmentCurrent === undefined || row.installmentTotal === undefined) continue;
+    const planKey = `${row.baseDescription}|${row.amount.toFixed(2)}|${row.installmentTotal}`;
+    const current = maxInstallmentByPlan.get(planKey) ?? 0;
+    if (row.installmentCurrent > current) maxInstallmentByPlan.set(planKey, row.installmentCurrent);
+  }
+
   for (const row of parsed) {
     addRow(row.date, row.title, row.amount, false);
 
@@ -125,10 +138,15 @@ export function reconcileNubankCsv(
       row.installmentTotal !== undefined &&
       row.installmentCurrent < row.installmentTotal
     ) {
-      for (let k = row.installmentCurrent + 1; k <= row.installmentTotal; k++) {
-        const futureDate = addMonths(row.date, k - row.installmentCurrent);
-        const desc = `${row.baseDescription} - Parcela ${k}/${row.installmentTotal}`;
-        addRow(futureDate, desc, row.amount, true);
+      const planKey = `${row.baseDescription}|${row.amount.toFixed(2)}|${row.installmentTotal}`;
+      const isMostAdvancedInstallment =
+        maxInstallmentByPlan.get(planKey) === row.installmentCurrent;
+      if (isMostAdvancedInstallment) {
+        for (let k = row.installmentCurrent + 1; k <= row.installmentTotal; k++) {
+          const futureDate = addMonths(row.date, k - row.installmentCurrent);
+          const desc = `${row.baseDescription} - Parcela ${k}/${row.installmentTotal}`;
+          addRow(futureDate, desc, row.amount, true);
+        }
       }
     }
   }
