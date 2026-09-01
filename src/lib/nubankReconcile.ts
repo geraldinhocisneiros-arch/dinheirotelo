@@ -1,6 +1,6 @@
 import type { Transaction } from "@/lib/types";
 import { parseCSV } from "@/lib/csv";
-import { parseAmountBR } from "@/lib/money";
+import { parseSignedAmountBR } from "@/lib/money";
 import { faturaYearMonth } from "@/lib/fatura";
 import { todayIso } from "@/lib/format";
 
@@ -32,7 +32,10 @@ function parseNubankCsv(text: string): NubankRow[] {
     const title = row[titleIdx]?.trim();
     const rawAmount = row[amountIdx]?.trim();
     if (!date || !title || !rawAmount) continue;
-    const amount = parseAmountBR(rawAmount);
+    // Preserva o sinal: o extrato do Nubank traz valores negativos pra
+    // pagamentos recebidos, estornos e descontos de antecipação, que
+    // precisam abater da fatura em vez de somar como compra.
+    const amount = parseSignedAmountBR(rawAmount);
     if (amount === null) continue;
 
     const m = title.match(PARCELA_RE);
@@ -76,17 +79,21 @@ export function reconcileNubankCsv(
 ): ReconcileResult {
   const parsed = parseNubankCsv(csvText);
 
+  // A chave inclui a descricao alem de data+valor: parcelas diferentes de
+  // compras diferentes podem cair no mesmo dia com o mesmo valor (ex: varias
+  // parcelas de R$ 565,80 de compras distintas na mesma data), e usar so
+  // data+valor faria uma ser confundida com a outra e descartada por engano.
   const seen = new Set(
     existingTransactions
       .filter((t) => t.paymentMethod === "credit_card")
-      .map((t) => `${t.date}|${t.amount.toFixed(2)}`),
+      .map((t) => `${t.date}|${t.description}|${t.amount.toFixed(2)}`),
   );
 
   const rows: ReconcileRow[] = [];
   const toImport: Omit<Transaction, "id">[] = [];
 
   function addRow(date: string, description: string, amount: number, isFuture: boolean) {
-    const key = `${date}|${amount.toFixed(2)}`;
+    const key = `${date}|${description}|${amount.toFixed(2)}`;
     const alreadyExists = seen.has(key);
     rows.push({
       date,
