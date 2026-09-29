@@ -108,9 +108,24 @@ export const useFinanceStore = create<FinanceState>()(
       },
 
       removeTransaction: (id) => {
-        set((state) => ({
-          transactions: state.transactions.filter((tx) => tx.id !== id),
-        }));
+        set((state) => {
+          const removed = state.transactions.find((tx) => tx.id === id);
+          const templateId = removed?.recurringTemplateId;
+          const month = removed?.date.slice(0, 7);
+          return {
+            transactions: state.transactions.filter((tx) => tx.id !== id),
+            // Apagar um lancamento de recorrente = "nesse mes nao tem": marca o
+            // mes como pulado, senao o autoLaunch recria o lancamento sozinho.
+            recurringTemplates:
+              templateId && month
+                ? state.recurringTemplates.map((rt) =>
+                    rt.id === templateId && !(rt.skippedMonths ?? []).includes(month)
+                      ? { ...rt, skippedMonths: [...(rt.skippedMonths ?? []), month] }
+                      : rt,
+                  )
+                : state.recurringTemplates,
+          };
+        });
         get().syncPaidFaturaAmounts();
       },
 
@@ -158,7 +173,7 @@ export const useFinanceStore = create<FinanceState>()(
       updateRecurringTemplate: (id, r) => {
         set((state) => ({
           recurringTemplates: state.recurringTemplates.map((rt) =>
-            rt.id === id ? { ...r, id } : rt,
+            rt.id === id ? { skippedMonths: rt.skippedMonths, ...r, id } : rt,
           ),
         }));
         get().autoLaunchRecurring();
@@ -185,6 +200,17 @@ export const useFinanceStore = create<FinanceState>()(
       launchRecurring: (id, date) => {
         const template = get().recurringTemplates.find((rt) => rt.id === id);
         if (!template) return;
+        // Lancar na mao desfaz um "pulado" anterior nesse mes.
+        const month = date.slice(0, 7);
+        if (template.skippedMonths?.includes(month)) {
+          set((state) => ({
+            recurringTemplates: state.recurringTemplates.map((rt) =>
+              rt.id === id
+                ? { ...rt, skippedMonths: rt.skippedMonths?.filter((m) => m !== month) }
+                : rt,
+            ),
+          }));
+        }
         get().addTransaction({
           date,
           description: template.description,
@@ -212,6 +238,7 @@ export const useFinanceStore = create<FinanceState>()(
           const ym = shiftMonth(startMonth, i);
           for (const template of state.recurringTemplates) {
             if (!template.active) continue;
+            if (template.skippedMonths?.includes(ym)) continue;
             const exists =
               state.transactions.some(
                 (tx) => tx.recurringTemplateId === template.id && tx.date.slice(0, 7) === ym,
