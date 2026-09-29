@@ -31,6 +31,9 @@ export interface RecurringTemplate {
   paymentMethod: PaymentMethod;
   dayOfMonth: number;
   active: boolean;
+  // Meses ("2026-10") em que o lancamento desse recorrente foi apagado de
+  // proposito - nao sao gerados de novo nem contam na projecao.
+  skippedMonths?: string[];
 }
 
 export interface Budget {

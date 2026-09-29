@@ -104,6 +104,7 @@ export function pendingRecurringInMonth(
   if (yearMonth < CONTROL_START_MONTH) return [];
   return templates.filter((t) => {
     if (!t.active || t.paymentMethod !== "account") return false;
+    if (t.skippedMonths?.includes(yearMonth)) return false;
     return !transactions.some((tx) => {
       if (monthOf(tx.date) !== yearMonth || tx.paymentMethod !== "account") {
         return false;
