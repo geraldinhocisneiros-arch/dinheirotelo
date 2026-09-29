@@ -1,5 +1,6 @@
 import type { Budget, FaturaPayment, RecurringTemplate, Transaction } from "@/lib/types";
 import { currentYearMonth, faturaYearMonth } from "@/lib/fatura";
+import { shiftMonth } from "@/lib/date";
 
 // Mes em que o controle "de verdade" comecou. Antes dele (setembro/2026, mes
 // de zerar tudo), a projecao nao desconta recorrentes ainda nao lancados nem
@@ -158,12 +159,67 @@ export function pendingBudgetItemsInMonth(
   });
 }
 
-// Saldo projetado: saldo ja lancado ate o fim do mes + recorrentes de conta
-// que ainda vao entrar/sair nesse mes mas ainda nao foram lancados + o que
-// ainda resta dos orcamentos do mes (assumido como saida ate o fim do mes) +
-// faturas do cartao ainda em aberto (assumidas como saida ate serem pagas).
-// Atualiza sozinho conforme o estado muda (React re-renderiza a partir do
-// store), entao "tempo real" aqui significa: sempre reflete o estado atual.
+// Entradas e saidas do mes, do jeito que o Painel mostra: lancamentos de conta
+// do mes + recorrentes ainda nao lancados + fatura do cartao do mes (se nao
+// paga) + o que ainda resta dos orcamentos (Feira, Gasolina etc.), assumido
+// como saida ate o fim do mes.
+export function monthFlows(
+  transactions: Transaction[],
+  templates: RecurringTemplate[],
+  budgets: Budget[],
+  faturaPayments: FaturaPayment[],
+  yearMonth: string,
+) {
+  const launched = monthIncomeExpense(transactions, yearMonth);
+  const pending = pendingRecurringInMonth(templates, transactions, yearMonth);
+  const pendingIncome = pending
+    .filter((t) => t.type === "income")
+    .reduce((s, t) => s + t.amount, 0);
+  const pendingExpense = pending
+    .filter((t) => t.type === "expense")
+    .reduce((s, t) => s + t.amount, 0);
+  const fatura = pendingFaturaInMonth(transactions, faturaPayments, yearMonth);
+  const budget = pendingBudgetInMonth(transactions, budgets, yearMonth);
+  return {
+    launchedIncome: launched.income,
+    launchedExpense: launched.expense,
+    pendingIncome,
+    pendingExpense,
+    fatura,
+    budget,
+    income: launched.income + pendingIncome,
+    expense: launched.expense + pendingExpense + fatura + budget,
+  };
+}
+
+// Saldo com que o mes comeca (= como terminou o mes anterior). Ate o mes
+// atual, e o saldo de conta lancado ate o fim do mes anterior, menos faturas
+// do cartao que ficaram em aberto. Pra meses futuros, e a projecao do mes
+// anterior - assim o orcamento/recorrentes de um mes futuro intermediario ja
+// entram como gastos, em vez de "sobrar" no mes seguinte.
+export function openingBalance(
+  transactions: Transaction[],
+  templates: RecurringTemplate[],
+  budgets: Budget[],
+  faturaPayments: FaturaPayment[],
+  yearMonth: string,
+): number {
+  const current = currentYearMonth();
+  let ym = yearMonth <= current ? yearMonth : current;
+  const prev = shiftMonth(ym, -1);
+  let balance =
+    accountBalanceUpTo(transactions, prev) -
+    pendingFaturaUpTo(transactions, faturaPayments, prev);
+  while (ym < yearMonth) {
+    const f = monthFlows(transactions, templates, budgets, faturaPayments, ym);
+    balance += f.income - f.expense;
+    ym = shiftMonth(ym, 1);
+  }
+  return balance;
+}
+
+// Projecao de fim do mes = saldo do fim do mes anterior + entradas - saidas
+// (saidas ja incluem fatura do cartao e o orcamento ainda nao gasto).
 export function projectedBalance(
   transactions: Transaction[],
   templates: RecurringTemplate[],
@@ -171,15 +227,12 @@ export function projectedBalance(
   faturaPayments: FaturaPayment[],
   yearMonth: string,
 ): number {
-  const base = accountBalanceUpTo(transactions, yearMonth);
-  const pending = pendingRecurringInMonth(templates, transactions, yearMonth);
-  const pendingDelta = pending.reduce(
-    (sum, t) => sum + (t.type === "income" ? t.amount : -t.amount),
-    0,
+  const f = monthFlows(transactions, templates, budgets, faturaPayments, yearMonth);
+  return (
+    openingBalance(transactions, templates, budgets, faturaPayments, yearMonth) +
+    f.income -
+    f.expense
   );
-  const pendingBudget = pendingBudgetInMonth(transactions, budgets, yearMonth);
-  const pendingFatura = pendingFaturaUpTo(transactions, faturaPayments, yearMonth);
-  return base + pendingDelta - pendingBudget - pendingFatura;
 }
 
 // Descricao usada pro lancamento sintetico que representa "paguei a fatura

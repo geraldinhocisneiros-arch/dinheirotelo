@@ -7,15 +7,13 @@ import {
   accountBalanceSettled,
   categorySpendInMonth,
   creditCardTransactionsByFatura,
-  monthIncomeExpense,
-  openFaturasUpTo,
+  monthFlows,
+  openingBalance,
   pendingBudgetItemsInMonth,
-  pendingFaturaInMonth,
   pendingRecurringInMonth,
-  projectedBalance,
   transactionsInMonth,
-  unsettledAccountTransactionsUpTo,
 } from "@/lib/selectors";
+import { shiftMonth } from "@/lib/date";
 import { currentYearMonth, formatYearMonth } from "@/lib/fatura";
 import { TrendingUp, TrendingDown, Wallet, Sparkles, Check, Circle } from "lucide-react";
 
@@ -30,23 +28,18 @@ export function Dashboard() {
   const [ym, setYm] = useState(currentYearMonth());
   const today = todayIso();
   const currentBalance = accountBalanceSettled(transactions);
-  const { income, expense } = monthIncomeExpense(transactions, ym);
-  const pendingRecurring = pendingRecurringInMonth(recurringTemplates, transactions, ym);
-  const projected = projectedBalance(
+  const flows = monthFlows(transactions, recurringTemplates, budgets, faturaPayments, ym);
+  const opening = openingBalance(
     transactions,
     recurringTemplates,
     budgets,
     faturaPayments,
     ym,
   );
+  const projected = opening + flows.income - flows.expense;
+  const pendingRecurring = pendingRecurringInMonth(recurringTemplates, transactions, ym);
   const pendingBudgetItems = pendingBudgetItemsInMonth(transactions, budgets, ym).filter(
     (b) => b.remaining > 0,
-  );
-  const pendingFatura = pendingFaturaInMonth(transactions, faturaPayments, ym);
-  const expenseWithFatura = expense + pendingFatura;
-  const openFaturas = openFaturasUpTo(transactions, faturaPayments, ym);
-  const unsettledAccount = [...unsettledAccountTransactionsUpTo(transactions, ym)].sort(
-    (a, b) => a.date.localeCompare(b.date),
   );
 
   const cardPurchases = creditCardTransactionsByFatura(transactions).get(ym) ?? [];
@@ -98,7 +91,7 @@ export function Dashboard() {
             <TrendingUp size={16} className="text-[var(--income)]" /> Entradas do mês
           </div>
           <div className="text-2xl font-semibold text-[var(--income)]">
-            {formatBRL(income)}
+            {formatBRL(flows.income)}
           </div>
         </Card>
         <Card>
@@ -106,7 +99,7 @@ export function Dashboard() {
             <TrendingDown size={16} className="text-[var(--expense)]" /> Saídas do mês
           </div>
           <div className="text-2xl font-semibold text-[var(--expense)]">
-            {formatBRL(expenseWithFatura)}
+            {formatBRL(flows.expense)}
           </div>
         </Card>
       </div>
@@ -117,26 +110,21 @@ export function Dashboard() {
         </h2>
         <ul className="text-sm divide-y divide-[var(--border)]">
           <li className="py-1.5 flex items-center justify-between gap-3">
-            <span>Saldo atual (hoje, {formatDateBR(today)})</span>
-            <span className="font-medium shrink-0">{formatBRL(currentBalance)}</span>
+            <span>Saldo no fim de {formatYearMonth(shiftMonth(ym, -1))}</span>
+            <span className="font-medium shrink-0">{formatBRL(opening)}</span>
           </li>
-          {unsettledAccount.map((t) => (
-            <li key={t.id} className="py-1.5 flex items-center justify-between gap-3">
-              <span className="min-w-0 truncate">
-                {t.description}{" "}
-                <span className="text-[var(--text-muted)]">
-                  ({formatDateBR(t.date)}, já lançado, ainda{" "}
-                  {t.type === "income" ? "não recebido" : "não pago"})
-                </span>
-              </span>
-              <span
-                className={`shrink-0 ${t.type === "income" ? "text-[var(--income)]" : "text-[var(--expense)]"}`}
-              >
-                {t.type === "income" ? "+" : "-"}
-                {formatBRL(t.amount)}
-              </span>
-            </li>
-          ))}
+          <li className="py-1.5 flex items-center justify-between gap-3">
+            <span>Entradas lançadas no mês</span>
+            <span className="text-[var(--income)] shrink-0">
+              +{formatBRL(flows.launchedIncome)}
+            </span>
+          </li>
+          <li className="py-1.5 flex items-center justify-between gap-3">
+            <span>Saídas lançadas no mês</span>
+            <span className="text-[var(--expense)] shrink-0">
+              -{formatBRL(flows.launchedExpense)}
+            </span>
+          </li>
           {pendingRecurring.map((t) => (
             <li key={t.id} className="py-1.5 flex items-center justify-between gap-3">
               <span className="min-w-0 truncate">
@@ -165,22 +153,17 @@ export function Dashboard() {
               </span>
             </li>
           ))}
-          {openFaturas.map((f) => (
-            <li
-              key={f.yearMonth}
-              className="py-1.5 flex items-center justify-between gap-3"
-            >
+          {flows.fatura > 0 && (
+            <li className="py-1.5 flex items-center justify-between gap-3">
               <span>
                 Fatura do cartão em aberto{" "}
-                <span className="text-[var(--text-muted)]">
-                  ({formatYearMonth(f.yearMonth)})
-                </span>
+                <span className="text-[var(--text-muted)]">({formatYearMonth(ym)})</span>
               </span>
               <span className="text-[var(--expense)] shrink-0">
-                -{formatBRL(f.total)}
+                -{formatBRL(flows.fatura)}
               </span>
             </li>
-          ))}
+          )}
           <li className="py-1.5 flex items-center justify-between gap-3 font-semibold">
             <span>Projeção fim do mês</span>
             <span
