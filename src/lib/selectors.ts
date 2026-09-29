@@ -1,6 +1,11 @@
 import type { Budget, FaturaPayment, RecurringTemplate, Transaction } from "@/lib/types";
 import { currentYearMonth, faturaYearMonth } from "@/lib/fatura";
 
+// Mes em que o controle "de verdade" comecou. Antes dele (setembro/2026, mes
+// de zerar tudo), a projecao nao desconta recorrentes ainda nao lancados nem
+// orcamento nao gasto - fica igual ao saldo ja lancado.
+export const CONTROL_START_MONTH = "2026-10";
+
 export function monthOf(dateIso: string): string {
   return dateIso.slice(0, 7);
 }
@@ -95,6 +100,7 @@ export function pendingRecurringInMonth(
   transactions: Transaction[],
   yearMonth: string,
 ): RecurringTemplate[] {
+  if (yearMonth < CONTROL_START_MONTH) return [];
   return templates.filter((t) => {
     if (!t.active || t.paymentMethod !== "account") return false;
     return !transactions.some((tx) => {
@@ -127,7 +133,7 @@ export function pendingBudgetInMonth(
   budgets: Budget[],
   yearMonth: string,
 ): number {
-  if (yearMonth < currentYearMonth()) return 0;
+  if (yearMonth < currentYearMonth() || yearMonth < CONTROL_START_MONTH) return 0;
   return budgets.reduce((sum, b) => {
     const spent = categorySpendInMonth(transactions, b.categoryId, yearMonth);
     return sum + Math.max(b.monthlyLimit - spent, 0);
