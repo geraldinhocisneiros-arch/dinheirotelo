@@ -9,7 +9,7 @@ import {
   creditCardTransactionsByFatura,
   monthIncomeExpense,
   openFaturasUpTo,
-  pendingBudgetInMonth,
+  pendingBudgetItemsInMonth,
   pendingFaturaInMonth,
   pendingRecurringInMonth,
   projectedBalance,
@@ -39,7 +39,9 @@ export function Dashboard() {
     faturaPayments,
     ym,
   );
-  const pendingBudget = pendingBudgetInMonth(transactions, budgets, ym);
+  const pendingBudgetItems = pendingBudgetItemsInMonth(transactions, budgets, ym).filter(
+    (b) => b.remaining > 0,
+  );
   const pendingFatura = pendingFaturaInMonth(transactions, faturaPayments, ym);
   const expenseWithFatura = expense + pendingFatura;
   const openFaturas = openFaturasUpTo(transactions, faturaPayments, ym);
@@ -149,17 +151,20 @@ export function Dashboard() {
               </span>
             </li>
           ))}
-          {pendingBudget > 0 && (
-            <li className="py-1.5 flex items-center justify-between gap-3">
-              <span>
-                Orçamento ainda não gasto (Feira, Gasolina etc.){" "}
-                <span className="text-[var(--text-muted)]">assumido como saída</span>
+          {pendingBudgetItems.map((b) => (
+            <li key={b.categoryId} className="py-1.5 flex items-center justify-between gap-3">
+              <span className="min-w-0 truncate">
+                {categoryById[b.categoryId]?.name ?? "Orçamento"}{" "}
+                <span className="text-[var(--text-muted)]">
+                  (orçamento {formatBRL(b.limit)}, já gasto {formatBRL(b.spent)}, resto
+                  assumido como saída)
+                </span>
               </span>
               <span className="text-[var(--expense)] shrink-0">
-                -{formatBRL(pendingBudget)}
+                -{formatBRL(b.remaining)}
               </span>
             </li>
-          )}
+          ))}
           {openFaturas.map((f) => (
             <li
               key={f.yearMonth}

@@ -133,11 +133,29 @@ export function pendingBudgetInMonth(
   budgets: Budget[],
   yearMonth: string,
 ): number {
-  if (yearMonth < currentYearMonth() || yearMonth < CONTROL_START_MONTH) return 0;
-  return budgets.reduce((sum, b) => {
+  return pendingBudgetItemsInMonth(transactions, budgets, yearMonth).reduce(
+    (sum, b) => sum + b.remaining,
+    0,
+  );
+}
+
+// Mesmo calculo de pendingBudgetInMonth, mas por categoria - pra tela mostrar
+// de onde vem cada parte do orcamento reservado na projecao.
+export function pendingBudgetItemsInMonth(
+  transactions: Transaction[],
+  budgets: Budget[],
+  yearMonth: string,
+): { categoryId: string; limit: number; spent: number; remaining: number }[] {
+  if (yearMonth < currentYearMonth() || yearMonth < CONTROL_START_MONTH) return [];
+  return budgets.map((b) => {
     const spent = categorySpendInMonth(transactions, b.categoryId, yearMonth);
-    return sum + Math.max(b.monthlyLimit - spent, 0);
-  }, 0);
+    return {
+      categoryId: b.categoryId,
+      limit: b.monthlyLimit,
+      spent,
+      remaining: Math.max(b.monthlyLimit - spent, 0),
+    };
+  });
 }
 
 // Saldo projetado: saldo ja lancado ate o fim do mes + recorrentes de conta
