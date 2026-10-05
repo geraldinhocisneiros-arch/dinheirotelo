@@ -10,7 +10,9 @@ ou login.
 - **Fatura do Cartão**: compras no cartão são agrupadas por fatura seguindo a
   regra de fechamento — compras até o dia 8 entram na fatura do mês corrente,
   a partir do dia 9 entram na fatura do mês seguinte. Marcar a fatura como
-  paga lança o total como saída da conta.
+  paga lança o total como saída da conta. Dá pra pagar a fatura aos poucos:
+  cada pagamento parcial sai da conta na data em que foi feito e abate o que
+  falta; "Quitar restante" lança só a diferença.
 - **Recorrentes**: modelos de entradas/saídas fixas (salário, aluguel,
   assinaturas) para lançar com um clique todo mês.
 - **Orçamentos**: limite mensal por categoria (padrão: Feira R$ 1.200 e

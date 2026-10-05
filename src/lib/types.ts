@@ -17,6 +17,10 @@ export interface Transaction {
   categoryId: string;
   paymentMethod: PaymentMethod;
   recurringTemplateId?: string;
+  // Pagamento parcial (adiantado) da fatura do cartao desse mes ("2026-10").
+  // E uma saida de conta normal - sai do saldo na data do pagamento - e
+  // abate o que ainda falta pagar daquela fatura.
+  faturaPartialOf?: string;
   // Se ja foi efetivamente recebido/pago (baixado). So conta pro saldo atual
   // quando true - a data e so o planejamento, isso aqui e a realidade.
   settled: boolean;

@@ -12,6 +12,7 @@ import { shiftMonth, daysInMonth } from "@/lib/date";
 import { currentYearMonth } from "@/lib/fatura";
 import {
   creditCardTransactionsByFatura,
+  faturaPartialPaidTotal,
   faturaPaymentDescription,
   findDuplicateRecurringTemplates,
 } from "@/lib/selectors";
@@ -75,6 +76,7 @@ interface FinanceState {
   removeBudget: (categoryId: string) => void;
 
   setFaturaPaid: (yearMonth: string, paid: boolean) => void;
+  addFaturaPartialPayment: (yearMonth: string, amount: number, date: string) => void;
   syncPaidFaturaAmounts: () => void;
 }
 
@@ -331,11 +333,27 @@ export const useFinanceStore = create<FinanceState>()(
         get().syncPaidFaturaAmounts();
       },
 
+      addFaturaPartialPayment: (yearMonth, amount, date) => {
+        if (amount <= 0) return;
+        get().addTransaction({
+          date,
+          description: `Pagamento parcial fatura do cartão ${yearMonth}`,
+          amount,
+          type: "expense",
+          categoryId: "cat-outros-despesa",
+          paymentMethod: "account",
+          faturaPartialOf: yearMonth,
+          settled: true,
+        });
+      },
+
       // Mantem o lancamento sintetico "Fatura do cartao {mes}" de cada
       // fatura ja marcada como paga sempre igual ao total ATUAL das compras
       // daquele mes - roda depois de qualquer mudanca em transactions (nova
       // compra, edicao, exclusao, importacao) pra nunca deixar o valor pago
-      // "congelado" e desatualizado se uma compra for corrigida depois.
+      // "congelado" e desatualizado se uma compra for corrigida depois. Os
+      // pagamentos parciais ja sairam da conta, entao o lancamento de
+      // quitacao e so o restante.
       syncPaidFaturaAmounts: () => {
         const state = get();
         const byFatura = creditCardTransactionsByFatura(state.transactions);
@@ -344,10 +362,12 @@ export const useFinanceStore = create<FinanceState>()(
         for (const f of state.faturaPayments) {
           if (!f.paid) continue;
           const label = faturaPaymentDescription(f.yearMonth);
-          const currentTotal = (byFatura.get(f.yearMonth) ?? []).reduce(
-            (s, t) => s + t.amount,
-            0,
-          );
+          const currentTotal =
+            Math.round(
+              ((byFatura.get(f.yearMonth) ?? []).reduce((s, t) => s + t.amount, 0) -
+                faturaPartialPaidTotal(transactions, f.yearMonth)) *
+                100,
+            ) / 100;
           const existing = transactions.find((tx) => tx.description === label);
           if (currentTotal <= 0) {
             if (existing) {
