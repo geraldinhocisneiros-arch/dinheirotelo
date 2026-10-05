@@ -256,10 +256,29 @@ export function creditCardTransactionsByFatura(
   return map;
 }
 
+// Pagamentos parciais ja feitos de uma fatura (saidas de conta marcadas com
+// faturaPartialOf), do mais antigo pro mais recente.
+export function faturaPartialPayments(
+  transactions: Transaction[],
+  yearMonth: string,
+): Transaction[] {
+  return transactions
+    .filter((t) => t.faturaPartialOf === yearMonth)
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export function faturaPartialPaidTotal(
+  transactions: Transaction[],
+  yearMonth: string,
+): number {
+  return faturaPartialPayments(transactions, yearMonth).reduce((s, t) => s + t.amount, 0);
+}
+
 // Total da fatura de um mes especifico, so enquanto ela ainda nao foi paga -
 // depois de paga vira uma saida de conta de verdade (lancada na data do
 // pagamento), entao ja aparece nas contas normalmente e nao precisa mais
-// entrar aqui.
+// entrar aqui. Pagamentos parciais ja sairam da conta, entao so o restante
+// conta como "em aberto".
 export function pendingFaturaInMonth(
   transactions: Transaction[],
   faturaPayments: FaturaPayment[],
@@ -267,11 +286,12 @@ export function pendingFaturaInMonth(
 ): number {
   const paid = faturaPayments.find((f) => f.yearMonth === yearMonth)?.paid ?? false;
   if (paid) return 0;
-  return transactions
+  const total = transactions
     .filter(
       (t) => t.paymentMethod === "credit_card" && faturaYearMonth(t.date) === yearMonth,
     )
     .reduce((s, t) => s + t.amount, 0);
+  return Math.max(total - faturaPartialPaidTotal(transactions, yearMonth), 0);
 }
 
 // Todas as faturas ainda em aberto ate o mes projetado (inclusive), uma por
@@ -290,7 +310,10 @@ export function openFaturasUpTo(
     if (ym > yearMonth) continue;
     const paid = faturaPayments.find((f) => f.yearMonth === ym)?.paid ?? false;
     if (paid) continue;
-    const total = items.reduce((s, t) => s + t.amount, 0);
+    const total = Math.max(
+      items.reduce((s, t) => s + t.amount, 0) - faturaPartialPaidTotal(transactions, ym),
+      0,
+    );
     if (total > 0) result.push({ yearMonth: ym, total });
   }
   return result.sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));

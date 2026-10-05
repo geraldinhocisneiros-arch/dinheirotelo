@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 import { useFinanceStore } from "@/store/useFinanceStore";
-import { Button, Card, Label, Select } from "@/components/ui";
-import { formatBRL, formatDateBR } from "@/lib/format";
-import { creditCardTransactionsByFatura } from "@/lib/selectors";
+import { Button, Card, Input, Label, Select } from "@/components/ui";
+import { formatBRL, formatDateBR, todayIso } from "@/lib/format";
+import { creditCardTransactionsByFatura, faturaPartialPayments } from "@/lib/selectors";
+import { parseAmountBR } from "@/lib/money";
 import { currentYearMonth, formatYearMonth } from "@/lib/fatura";
 import { reconcileNubankCsv, type ReconcileResult } from "@/lib/nubankReconcile";
 import { CheckCircle2, Circle, Trash2, Upload, X } from "lucide-react";
@@ -14,6 +15,7 @@ export function Fatura() {
   const setFaturaPaid = useFinanceStore((s) => s.setFaturaPaid);
   const importTransactions = useFinanceStore((s) => s.importTransactions);
   const removeTransaction = useFinanceStore((s) => s.removeTransaction);
+  const addFaturaPartialPayment = useFinanceStore((s) => s.addFaturaPartialPayment);
 
   const categoryById = Object.fromEntries(categories.map((c) => [c.id, c]));
   const byFatura = useMemo(
@@ -30,6 +32,17 @@ export function Fatura() {
     categories.find((c) => c.id === "cat-outros-despesa")?.id ??
     expenseCategories[0]?.id ??
     "";
+
+  const [partialAmount, setPartialAmount] = useState("");
+  const [partialDate, setPartialDate] = useState(todayIso());
+
+  function handleAddPartial(ym: string) {
+    const amount = parseAmountBR(partialAmount);
+    if (!amount || amount <= 0 || !partialDate) return;
+    addFaturaPartialPayment(ym, amount, partialDate);
+    setPartialAmount("");
+    setPartialDate(todayIso());
+  }
 
   const [showReconcile, setShowReconcile] = useState(false);
   const [csvText, setCsvText] = useState("");
@@ -236,6 +249,9 @@ export function Fatura() {
             const total = items.reduce((s, t) => s + t.amount, 0);
             const payment = faturaPayments.find((f) => f.yearMonth === ym);
             const paid = payment?.paid ?? false;
+            const partials = faturaPartialPayments(transactions, ym);
+            const partialTotal = partials.reduce((s, t) => s + t.amount, 0);
+            const remaining = Math.max(total - partialTotal, 0);
             const isOpen = expanded === ym;
 
             return (
@@ -253,9 +269,16 @@ export function Fatura() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="font-semibold text-[var(--card)]">
-                      {formatBRL(total)}
-                    </span>
+                    <div className="text-right">
+                      <div className="font-semibold text-[var(--card)]">
+                        {formatBRL(total)}
+                      </div>
+                      {!paid && partialTotal > 0 && (
+                        <div className="text-xs text-[var(--text-muted)]">
+                          falta {formatBRL(remaining)}
+                        </div>
+                      )}
+                    </div>
                     <span
                       className={`text-xs px-2 py-1 rounded-full ${
                         paid
@@ -263,7 +286,7 @@ export function Fatura() {
                           : "bg-[var(--border)] text-[var(--text-muted)]"
                       }`}
                     >
-                      {paid ? "Paga" : "Em aberto"}
+                      {paid ? "Paga" : partialTotal > 0 ? "Paga em parte" : "Em aberto"}
                     </span>
                   </div>
                 </button>
@@ -300,6 +323,61 @@ export function Fatura() {
                           </li>
                         ))}
                     </ul>
+
+                    <div className="mb-3 rounded-lg border border-[var(--border)] p-3 text-sm space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-[var(--text-muted)]">Total da fatura</span>
+                        <span>{formatBRL(total)}</span>
+                      </div>
+                      {partials.map((p) => (
+                        <div key={p.id} className="flex items-center justify-between gap-3">
+                          <span className="text-[var(--text-muted)]">
+                            Pago em {formatDateBR(p.date)}
+                          </span>
+                          <span className="flex items-center gap-2">
+                            <span className="text-[var(--income)]">
+                              -{formatBRL(p.amount)}
+                            </span>
+                            <button
+                              onClick={() => removeTransaction(p.id)}
+                              aria-label="Excluir pagamento parcial"
+                            >
+                              <Trash2 size={14} className="text-[var(--expense)]" />
+                            </button>
+                          </span>
+                        </div>
+                      ))}
+                      <div className="flex justify-between font-medium border-t border-[var(--border)] pt-2">
+                        <span>{paid ? "Quitado no pagamento final" : "Falta pagar"}</span>
+                        <span>{formatBRL(remaining)}</span>
+                      </div>
+
+                      {!paid && remaining > 0 && (
+                        <div className="flex flex-wrap items-end gap-2 pt-1">
+                          <div className="w-32">
+                            <Label>Valor pago</Label>
+                            <Input
+                              inputMode="decimal"
+                              placeholder="1.490,00"
+                              value={partialAmount}
+                              onChange={(e) => setPartialAmount(e.target.value)}
+                            />
+                          </div>
+                          <div className="w-40">
+                            <Label>Data</Label>
+                            <Input
+                              type="date"
+                              value={partialDate}
+                              onChange={(e) => setPartialDate(e.target.value)}
+                            />
+                          </div>
+                          <Button variant="secondary" onClick={() => handleAddPartial(ym)}>
+                            Registrar pagamento parcial
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
                     <Button
                       variant={paid ? "secondary" : "primary"}
                       onClick={() => setFaturaPaid(ym, !paid)}
@@ -311,7 +389,10 @@ export function Fatura() {
                         </>
                       ) : (
                         <>
-                          <CheckCircle2 size={15} /> Marcar fatura como paga
+                          <CheckCircle2 size={15} />{" "}
+                          {partialTotal > 0
+                            ? `Quitar restante (${formatBRL(remaining)})`
+                            : "Marcar fatura como paga"}
                         </>
                       )}
                     </Button>
