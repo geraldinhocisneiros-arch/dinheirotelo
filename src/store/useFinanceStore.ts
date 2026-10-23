@@ -74,6 +74,7 @@ interface FinanceState {
 
   setBudget: (categoryId: string, monthlyLimit: number) => void;
   removeBudget: (categoryId: string) => void;
+  setBudgetSkipped: (categoryId: string, yearMonth: string, skipped: boolean) => void;
 
   setFaturaPaid: (yearMonth: string, paid: boolean) => void;
   addFaturaPartialPayment: (yearMonth: string, amount: number, date: string) => void;
@@ -310,6 +311,15 @@ export const useFinanceStore = create<FinanceState>()(
       removeBudget: (categoryId) =>
         set((state) => ({
           budgets: state.budgets.filter((b) => b.categoryId !== categoryId),
+        })),
+
+      setBudgetSkipped: (categoryId, yearMonth, skipped) =>
+        set((state) => ({
+          budgets: state.budgets.map((b) => {
+            if (b.categoryId !== categoryId) return b;
+            const others = (b.skippedMonths ?? []).filter((m) => m !== yearMonth);
+            return { ...b, skippedMonths: skipped ? [...others, yearMonth] : others };
+          }),
         })),
 
       setFaturaPaid: (yearMonth, paid) => {

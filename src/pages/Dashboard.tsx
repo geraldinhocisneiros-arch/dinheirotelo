@@ -5,6 +5,7 @@ import { MonthSelector } from "@/components/MonthSelector";
 import { formatBRL, formatDateBR, todayIso } from "@/lib/format";
 import {
   accountBalanceSettled,
+  budgetLimitInMonth,
   categorySpendInMonth,
   creditCardTransactionsByFatura,
   monthFlows,
@@ -209,13 +210,14 @@ export function Dashboard() {
             {budgets.map((b) => {
               const cat = categoryById[b.categoryId];
               const spent = categorySpendInMonth(transactions, b.categoryId, ym);
-              const left = b.monthlyLimit - spent;
+              const limit = budgetLimitInMonth(b, ym);
+              const left = limit - spent;
               return (
                 <div key={b.categoryId}>
                   <div className="flex justify-between text-sm mb-1">
                     <span>{cat?.name ?? "Categoria"}</span>
                     <span className="text-[var(--text-muted)]">
-                      {formatBRL(spent)} / {formatBRL(b.monthlyLimit)}
+                      {formatBRL(spent)} / {formatBRL(limit)}
                       {" · "}
                       <span
                         className={
@@ -226,7 +228,7 @@ export function Dashboard() {
                       </span>
                     </span>
                   </div>
-                  <ProgressBar value={spent} max={b.monthlyLimit} />
+                  <ProgressBar value={spent} max={limit} />
                 </div>
               );
             })}

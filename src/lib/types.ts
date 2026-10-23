@@ -43,6 +43,9 @@ export interface RecurringTemplate {
 export interface Budget {
   categoryId: string;
   monthlyLimit: number;
+  // Meses ("2026-10") em que esse orcamento foi zerado de proposito - nao
+  // conta como saida na projecao e o limite daquele mes vira R$ 0.
+  skippedMonths?: string[];
 }
 
 export interface FaturaPayment {
