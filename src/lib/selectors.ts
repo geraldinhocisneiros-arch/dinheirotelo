@@ -141,6 +141,11 @@ export function pendingBudgetInMonth(
   );
 }
 
+// Limite do orcamento naquele mes - zero se foi zerado so pra esse mes.
+export function budgetLimitInMonth(budget: Budget, yearMonth: string): number {
+  return budget.skippedMonths?.includes(yearMonth) ? 0 : budget.monthlyLimit;
+}
+
 // Mesmo calculo de pendingBudgetInMonth, mas por categoria - pra tela mostrar
 // de onde vem cada parte do orcamento reservado na projecao.
 export function pendingBudgetItemsInMonth(
@@ -151,11 +156,12 @@ export function pendingBudgetItemsInMonth(
   if (yearMonth < currentYearMonth() || yearMonth < CONTROL_START_MONTH) return [];
   return budgets.map((b) => {
     const spent = categorySpendInMonth(transactions, b.categoryId, yearMonth);
+    const limit = budgetLimitInMonth(b, yearMonth);
     return {
       categoryId: b.categoryId,
-      limit: b.monthlyLimit,
+      limit,
       spent,
-      remaining: Math.max(b.monthlyLimit - spent, 0),
+      remaining: Math.max(limit - spent, 0),
     };
   });
 }

@@ -3,8 +3,8 @@ import { useFinanceStore } from "@/store/useFinanceStore";
 import { Button, Card, Input, Label, ProgressBar, Select } from "@/components/ui";
 import { MonthSelector } from "@/components/MonthSelector";
 import { formatBRL } from "@/lib/format";
-import { categorySpendInMonth } from "@/lib/selectors";
-import { currentYearMonth } from "@/lib/fatura";
+import { budgetLimitInMonth, categorySpendInMonth } from "@/lib/selectors";
+import { currentYearMonth, formatYearMonth } from "@/lib/fatura";
 import { Plus, Trash2, X } from "lucide-react";
 
 export function Budgets() {
@@ -13,6 +13,7 @@ export function Budgets() {
   const transactions = useFinanceStore((s) => s.transactions);
   const setBudget = useFinanceStore((s) => s.setBudget);
   const removeBudget = useFinanceStore((s) => s.removeBudget);
+  const setBudgetSkipped = useFinanceStore((s) => s.setBudgetSkipped);
 
   const [showForm, setShowForm] = useState(false);
   const [categoryId, setCategoryId] = useState("");
@@ -35,7 +36,7 @@ export function Budgets() {
     setShowForm(false);
   }
 
-  const totalLimit = budgets.reduce((s, b) => s + b.monthlyLimit, 0);
+  const totalLimit = budgets.reduce((s, b) => s + budgetLimitInMonth(b, ym), 0);
   const totalSpent = budgets.reduce(
     (s, b) => s + categorySpendInMonth(transactions, b.categoryId, ym),
     0,
@@ -58,7 +59,9 @@ export function Budgets() {
         Defina um limite mensal por categoria. A "Projeção fim do mês" no
         Painel já conta o orçamento inteiro como saída desde o dia 1 — o que
         sobrar vira saldo positivo automaticamente, e se você estourar o
-        limite, o gasto a mais já pesa no saldo normalmente.
+        limite, o gasto a mais já pesa no saldo normalmente. Se num mês você
+        não vai usar um orçamento, use "Zerar este mês": o limite daquele mês
+        vira R$ 0 e o valor volta para a projeção.
       </p>
 
       {totalLimit > 0 && (
@@ -129,21 +132,38 @@ export function Budgets() {
           budgets.map((b) => {
             const cat = categoryById[b.categoryId];
             const spent = categorySpendInMonth(transactions, b.categoryId, ym);
-            const left = b.monthlyLimit - spent;
+            const skipped = b.skippedMonths?.includes(ym) ?? false;
+            const limit = budgetLimitInMonth(b, ym);
+            const left = limit - spent;
             return (
               <Card key={b.categoryId}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-medium">{cat?.name ?? "Categoria"}</span>
-                  <button
-                    onClick={() => removeBudget(b.categoryId)}
-                    aria-label="Excluir orçamento"
-                  >
-                    <Trash2 size={15} className="text-[var(--expense)]" />
-                  </button>
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <span className="font-medium">
+                    {cat?.name ?? "Categoria"}
+                    {skipped && (
+                      <span className="text-xs font-normal text-[var(--text-muted)]">
+                        {" "}(zerado em {formatYearMonth(ym)}, normal {formatBRL(b.monthlyLimit)})
+                      </span>
+                    )}
+                  </span>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button
+                      onClick={() => setBudgetSkipped(b.categoryId, ym, !skipped)}
+                      className="text-xs text-[var(--text-muted)] underline"
+                    >
+                      {skipped ? "Reativar este mês" : "Zerar este mês"}
+                    </button>
+                    <button
+                      onClick={() => removeBudget(b.categoryId)}
+                      aria-label="Excluir orçamento"
+                    >
+                      <Trash2 size={15} className="text-[var(--expense)]" />
+                    </button>
+                  </div>
                 </div>
                 <div className="flex justify-between text-sm mb-1">
                   <span className="text-[var(--text-muted)]">
-                    {formatBRL(spent)} de {formatBRL(b.monthlyLimit)}
+                    {formatBRL(spent)} de {formatBRL(limit)}
                   </span>
                   <span
                     className={
@@ -155,7 +175,7 @@ export function Budgets() {
                       : `excedeu em ${formatBRL(-left)}`}
                   </span>
                 </div>
-                <ProgressBar value={spent} max={b.monthlyLimit} />
+                <ProgressBar value={spent} max={limit} />
               </Card>
             );
           })
