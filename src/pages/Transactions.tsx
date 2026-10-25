@@ -6,6 +6,7 @@ import { MonthSelector } from "@/components/MonthSelector";
 import { formatBRL, formatDateBR, todayIso } from "@/lib/format";
 import { currentYearMonth, faturaYearMonth, formatYearMonth } from "@/lib/fatura";
 import { creditCardTransactionsByFatura } from "@/lib/selectors";
+import { splitInstallments } from "@/lib/installments";
 import { importTransactionsFromCsv, type ImportResult } from "@/lib/importTransactions";
 import { reconcileBankStatement, type BankReconcileResult } from "@/lib/bankReconcile";
 import { exportBackup, parseBackup, applyBackup } from "@/lib/backup";
@@ -153,8 +154,19 @@ export function Transactions() {
   const showFaturaRow =
     faturaItems.length > 0 && (filterType === "all" || filterType === "expense");
 
+  // Parcelamento so na criacao de compra no cartao: ao editar, cada parcela
+  // ja e um lancamento proprio e e editada individualmente.
+  const [installments, setInstallments] = useState(1);
+  const canInstall =
+    !editingId && form.type === "expense" && form.paymentMethod === "credit_card";
+  const isInstallmentPurchase = canInstall && installments > 1;
+  const installmentPreview = isInstallmentPurchase && form.amount > 0 && form.date
+    ? splitInstallments(form, installments)
+    : [];
+
   function openNew() {
     setForm(emptyForm());
+    setInstallments(1);
     setEditingId(null);
     setShowForm(true);
   }
@@ -171,6 +183,8 @@ export function Transactions() {
     if (!form.description.trim() || form.amount <= 0 || !form.categoryId) return;
     if (editingId) {
       updateTransaction(editingId, form);
+    } else if (isInstallmentPurchase) {
+      importTransactions([], splitInstallments(form, installments));
     } else {
       addTransaction(form);
     }
@@ -669,7 +683,7 @@ export function Transactions() {
               />
             </div>
             <div>
-              <Label>Valor (R$)</Label>
+              <Label>{isInstallmentPurchase ? "Valor total (R$)" : "Valor (R$)"}</Label>
               <Input
                 type="number"
                 step="0.01"
@@ -707,10 +721,37 @@ export function Transactions() {
                 ))}
               </Select>
             </div>
-            {form.paymentMethod === "credit_card" && form.date && (
+            {canInstall && (
+              <div>
+                <Label>Parcelas</Label>
+                <Select
+                  value={installments}
+                  onChange={(e) => setInstallments(Number(e.target.value))}
+                >
+                  {Array.from({ length: 24 }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>
+                      {n === 1 ? "À vista" : `${n}x`}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
+            {installmentPreview.length > 0 ? (
               <p className="sm:col-span-2 text-xs text-[var(--text-muted)]">
-                Vai para a fatura de {formatYearMonth(faturaYearMonth(form.date))}.
+                {installments}x de {formatBRL(installmentPreview[installments - 1].amount)}
+                {installmentPreview[0].amount !== installmentPreview[installments - 1].amount &&
+                  ` (1ª de ${formatBRL(installmentPreview[0].amount)})`}
+                {" "}— da fatura de{" "}
+                {formatYearMonth(faturaYearMonth(installmentPreview[0].date))} até a de{" "}
+                {formatYearMonth(faturaYearMonth(installmentPreview[installments - 1].date))}.
               </p>
+            ) : (
+              form.paymentMethod === "credit_card" &&
+              form.date && (
+                <p className="sm:col-span-2 text-xs text-[var(--text-muted)]">
+                  Vai para a fatura de {formatYearMonth(faturaYearMonth(form.date))}.
+                </p>
+              )
             )}
             {form.paymentMethod === "account" && (
               <label className="sm:col-span-2 flex items-center gap-2 text-sm">
